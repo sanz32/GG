@@ -1,0 +1,47 @@
+name: Bug report
+description: Something in GG doesn't work as expected
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect to see instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we reproduce it?
+      description: The steps that lead to the problem, if you know them.
+      placeholder: |
+        1. Open /gg
+        2. Click ...
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: GG version
+      description: Shown at the top right of the GG window.
+      placeholder: v0.1.18
+    validations:
+      required: true
+  - type: dropdown
+    id: language
+    attributes:
+      label: Game language
+      options:
+        - English
+        - Spanish
+        - Other
+  - type: textarea
+    id: error
+    attributes:
+      label: Lua error
+      description: If you got an error, paste the full text here. BugSack makes it easy to copy.
+      render: text
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag and drop images here if they help explain the problem.

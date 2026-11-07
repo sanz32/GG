@@ -1,0 +1,20 @@
+name: Suggestion
+description: An idea to make GG better
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like GG to do?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help you?
+      description: How you play, and what this would make easier.
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or examples
+      description: Optional. A sketch or another addon's screenshot can help.

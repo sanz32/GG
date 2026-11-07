@@ -1,0 +1,5 @@
+package-as: GG
+
+ignore:
+  - .github
+  - README.md

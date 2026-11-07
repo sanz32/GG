@@ -1,0 +1,68 @@
+## Interface: 120100, 120105
+## Title: GG
+## Notes: Great Vault, currencies, M+ and raid lockouts for all your characters
+## Notes-esES: Gran Vault, monedas, M+ y lockouts de banda de todos tus personajes
+## Notes-esMX: Gran Vault, monedas, M+ y lockouts de banda de todos tus personajes
+## Version: 0.1.18
+## X-Wago-ID: n6VL1LGd
+## IconTexture: Interface\AddOns\GG\Media\logo-watermark.png
+## SavedVariables: GGDB
+
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.xml
+Libs\LibDeflate\LibDeflate.lua
+Libs\LibSerialize\LibSerialize.lua
+Libs\AceComm-3.0\AceComm-3.0.xml
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\lib.xml
+Libs\LibSharedMedia-3.0\lib.xml
+Libs\AceGUI-3.0\AceGUI-3.0.xml
+Libs\AceLocale-3.0\AceLocale-3.0.xml
+Libs\AceConfig-3.0\AceConfig-3.0.xml
+
+Locales\esES.lua
+Locales\enUS.lua
+
+Data\Season.lua
+
+ChatRestrictions.lua
+Core.lua
+Announce.lua
+Vault.lua
+BonusRoll.lua
+Lockouts.lua
+Currencies.lua
+Equipment.lua
+Roster.lua
+Arrange.lua
+GroupLockouts.lua
+Comm.lua
+AccountSync.lua
+RaidRosters.lua
+RaidGroups.lua
+Links.lua
+Profile.lua
+
+UI\Theme.lua
+UI\Widgets.lua
+UI\RosterThemes.lua
+UI\BossIcons.lua
+UI\VaultGrid.lua
+UI\TipCard.lua
+UI\CharacterTooltip.lua
+UI\MainWindow.lua
+UI\RosterWindow.lua
+UI\VaultPreview.lua
+UI\EquipmentWindow.lua
+UI\CharacterCard.lua
+UI\LockoutAlert.lua
+UI\RosterAlert.lua
+UI\RosterCall.lua
+UI\RaidTab.lua
+UI\BonusRollTab.lua
+UI\RaidRostersTab.lua
+UI\Minimap.lua
+UI\Options.lua
+UI\ProfilePanel.lua
+UI\SettingsWindow.lua
+UI\SetupWizard.lua
