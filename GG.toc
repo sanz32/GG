@@ -5,6 +5,7 @@
 ## Notes-esMX: Gran Vault, monedas, M+ y lockouts de banda de todos tus personajes
 ## Version: 0.1.18
 ## X-Wago-ID: n6VL1LGd
+## X-Curse-Project-ID: 1672603
 ## IconTexture: Interface\AddOns\GG\Media\logo-watermark.png
 ## SavedVariables: GGDB
 
