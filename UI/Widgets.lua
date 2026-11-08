@@ -404,15 +404,36 @@ function Widgets.ShowMenuVeil(trigger, menu)
   right:SetPoint("BOTTOMLEFT", trigger, "BOTTOMRIGHT")
   right:SetWidth(math.max(0.01, X(window, "right") - X(trigger, "right")))
   menuVeil.owner = menu
+  menuVeil.window = window
   menuVeil:Show()
+  if GG.Tip and Widgets.MenuCovers(GG.Tip:Owner()) then GG.Tip:Hide() end
+  if GameTooltip:IsShown() and Widgets.MenuCovers(GameTooltip:GetOwner()) then GameTooltip:Hide() end
 end
 
 function Widgets.HideMenuVeil(menu)
   if menuVeil and (menu == nil or menuVeil.owner == menu) then
     menuVeil.owner = nil
+    menuVeil.window = nil
     menuVeil:Hide()
   end
 end
+
+local function IsInside(frame, ancestor)
+  while frame do
+    if frame == ancestor then return true end
+    frame = frame:GetParent()
+  end
+  return false
+end
+
+function Widgets.MenuCovers(owner)
+  if not (owner and menuVeil and menuVeil:IsShown() and menuVeil.owner) then return false end
+  return IsInside(owner, menuVeil.window) and not IsInside(owner, menuVeil.owner)
+end
+
+GameTooltip:HookScript("OnShow", function(tooltip)
+  if menuVeil and menuVeil:IsShown() and Widgets.MenuCovers(tooltip:GetOwner()) then tooltip:Hide() end
+end)
 
 local activeDropdownClose
 
@@ -481,6 +502,7 @@ function Widgets.CreateDropdown(parent, opts)
       local listName = "GGDropdownList" .. dropdownInstanceCount
 
       list = CreateFrame("Frame", listName, UIParent, "BackdropTemplate")
+      list:Hide()
       list:SetFrameStrata("FULLSCREEN_DIALOG")
       list:SetToplevel(true)
       GG.Widgets.StyleMenu(list)

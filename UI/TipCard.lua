@@ -130,7 +130,8 @@ function Tip.Build(opts, draw, state)
 end
 
 local card
-local pools = { fs = { used = 0 }, tex = { used = 0 }, box = { used = 0 } }
+local openCount = 0
+local pools ={ fs = { used = 0 }, tex = { used = 0 }, box = { used = 0 } }
 
 local function Acquire(pool, create)
   pool.used = pool.used + 1
@@ -690,6 +691,7 @@ local function Anchor(owner, anchor)
 end
 
 function Tip:Open(owner, opts, draw)
+  if GG.Widgets.MenuCovers(owner) then return self:Hide() end
   local state
   if opts.watch then
     state = opts.watch()
@@ -702,6 +704,19 @@ function Tip:Open(owner, opts, draw)
   self.Render(self.Build(opts, draw, state))
   Anchor(owner, opts.anchor)
   card:Show()
+  openCount = openCount + 1
+  local session = openCount
+  local function Remeasure()
+    if not card:IsShown() or openCount ~= session or card.owner ~= owner then return end
+    Tip.Render(Tip.Build(card.opts, card.draw, card.state))
+    Anchor(owner, card.opts.anchor)
+  end
+  C_Timer.After(0, Remeasure)
+  C_Timer.After(0.5, Remeasure)
+end
+
+function Tip:Owner()
+  return card and card:IsShown() and card.owner or nil
 end
 
 function Tip:Hide()

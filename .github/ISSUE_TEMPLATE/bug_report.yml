@@ -23,7 +23,7 @@ body:
     attributes:
       label: GG version
       description: Shown at the top right of the GG window.
-      placeholder: v0.1.18
+      placeholder: v0.1.19
     validations:
       required: true
   - type: dropdown

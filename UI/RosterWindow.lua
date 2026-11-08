@@ -6332,6 +6332,7 @@ function GG.RosterUI:ToggleCharactersFlyout(anchor)
 
   if not charactersFlyout then
     charactersFlyout = CreateFrame("Frame", "GGCharactersFlyout", UIParent, "BackdropTemplate")
+    charactersFlyout:Hide()
     charactersFlyout:SetFrameStrata("FULLSCREEN_DIALOG")
     charactersFlyout:SetToplevel(true)
     GG.Widgets.StyleMenu(charactersFlyout)
