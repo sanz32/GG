@@ -161,6 +161,18 @@ function GG:IsMyAccountHash(hash)
   return GG:GetLinkedAccountHashMap()[hash] ~= nil
 end
 
+function GG:HasOtherAccounts()
+  local account = GGDB and GGDB.account
+  local options = GGDB and GGDB.options
+  if account and account.siblings and next(account.siblings) then return true end
+  if options then
+    if options.linkedAccountTags and #options.linkedAccountTags > 0 then return true end
+    if options.linkedAccountHashes and next(options.linkedAccountHashes) then return true end
+    if options.accountSlotManual then return true end
+  end
+  return (GG:GetAccountSlot() or 1) > 1
+end
+
 function GG:GetAccountSlot()
   local options = GGDB.options
   if options and options.accountSlotManual then
@@ -538,7 +550,14 @@ GG.frame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 SLASH_GG1 = "/gg"
-SlashCmdList["GG"] = function()
+SlashCmdList["GG"] = function(arg)
+  if arg and arg:lower():match("^%s*classes%s*$") and GG.RosterUI and GG.RosterUI.ToggleClassTest then
+    local L = LibStub("AceLocale-3.0"):GetLocale("GG")
+    local on = GG.RosterUI:ToggleClassTest()
+    print("|cff8B5CF6GG|r " .. (on and L["DIAG_CLASS_TEST_ON"] or L["DIAG_CLASS_TEST_OFF"]))
+    if on and not (GGRosterWindow and GGRosterWindow:IsShown()) then GG.RosterUI:Toggle() end
+    return
+  end
   if GG.RosterUI and GG.RosterUI.Toggle then
     GG.RosterUI:Toggle()
   end
@@ -570,7 +589,7 @@ SlashCmdList["GGROSTER"] = function(arg)
     if not roster then print("|cff8B5CF6GG|r " .. L["RG_TEST_NO_ROSTER"]) return end
     if not leader then print("|cff8B5CF6GG|r " .. L["RG_TEST_NO_SIBLING"]) return end
     if GG.RaidGroups:SimulateForming(roster, leader) then
-      print("|cff8B5CF6GG|r " .. L["RG_TEST_ON"]:format(roster.label, leader))
+      print("|cff8B5CF6GG|r " .. L["RG_TEST_ON"]:format(roster.label, leader, leader))
     else
       print("|cff8B5CF6GG|r " .. L["RG_TEST_NO_ROSTER"])
     end

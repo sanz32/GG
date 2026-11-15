@@ -529,45 +529,24 @@ function GG:ManualSync()
 end
 
 function GG.AccountSync:CreateSyncButton(parent, anchor)
-  local COLOR_NORMAL = { 0.55, 0.52, 0.63 }
-  local COLOR_HOVER = { 0.76, 0.61, 0.94 }
-  local BG_HOVER = { 0.165, 0.125, 0.251, 1 }
-  local BORDER_HOVER = { 0.427, 0.294, 0.690, 1 }
-  local TRANSPARENT = { 0, 0, 0, 0 }
-
-  local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
-  button:SetSize(22, 22)
-  button:EnableMouse(true)
+  local button = GG.Widgets.CreateIconButton(parent, 30, {
+    texture = "Interface\\Buttons\\UI-RefreshButton", iconSize = 15, desaturate = true,
+  })
   button:SetPoint("RIGHT", anchor, "LEFT", -6, 0)
-  button:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-
-  local icon = button:CreateTexture(nil, "ARTWORK")
-  icon:SetSize(14, 14)
-  icon:SetPoint("CENTER")
-  icon:SetTexture("Interface\\Buttons\\UI-RefreshButton")
-  icon:SetDesaturated(true)
+  local icon = button.icon
 
   local spin = icon:CreateAnimationGroup()
   local rotation = spin:CreateAnimation("Rotation")
   rotation:SetDegrees(-360)
   rotation:SetDuration(0.8)
 
-  local function Paint(hover)
-    icon:SetVertexColor(unpack(hover and COLOR_HOVER or COLOR_NORMAL))
-    button:SetBackdropColor(unpack(hover and BG_HOVER or TRANSPARENT))
-    button:SetBackdropBorderColor(unpack(hover and BORDER_HOVER or TRANSPARENT))
-  end
-  Paint(false)
-
-  button:SetScript("OnEnter", function(self)
-    Paint(true)
+  button:HookScript("OnEnter", function(self)
     GG.Tip:Open(self, { family = "ui", anchor = "BOTTOMRIGHT" }, function(t)
       t:Title(L["SYNC_BUTTON_TOOLTIP"])
       t:Text(L["SYNC_BUTTON_HINT"])
     end)
   end)
-  button:SetScript("OnLeave", function()
-    Paint(false)
+  button:HookScript("OnLeave", function()
     GameTooltip:Hide()
   end)
   button:SetScript("OnClick", function()

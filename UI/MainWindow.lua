@@ -14,13 +14,7 @@ local SECTION_GAP = 10
 
 local function ApplyBackdrop(f, opts)
   opts = opts or {}
-  f:SetBackdrop({
-    bgFile = "Interface\\Buttons\\WHITE8x8",
-    edgeFile = "Interface\\Buttons\\WHITE8x8",
-    edgeSize = opts.edgeSize or 1,
-  })
-  f:SetBackdropColor(unpack(opts.bg or GG.Theme.panel))
-  f:SetBackdropBorderColor(unpack(opts.border or GG.Theme.border))
+  GG.Widgets.Backdrop(f, opts.bg or GG.Theme.panel, opts.border or GG.Theme.border, opts.radius, opts.edgeSize)
 end
 
 local function CreateLabel(parent, size, color)
@@ -48,12 +42,12 @@ local function BuildFrame()
 
   tinsert(UISpecialFrames, "GGMainWindow")
 
-  ApplyBackdrop(frame, { bg = GG.Theme.background, edgeSize = 1 })
+  ApplyBackdrop(frame, { bg = GG.Theme.background, edgeSize = 1, radius = GG.Theme.cornerRadius })
 
   local accentBar = frame:CreateTexture(nil, "ARTWORK")
   accentBar:SetColorTexture(unpack(GG.Theme.accent))
-  accentBar:SetPoint("TOPLEFT")
-  accentBar:SetPoint("TOPRIGHT")
+  accentBar:SetPoint("TOPLEFT", GG.Theme.cornerRadius, 0)
+  accentBar:SetPoint("TOPRIGHT", -GG.Theme.cornerRadius, 0)
   accentBar:SetHeight(2)
 
   local title = CreateLabel(frame, 16)
@@ -286,6 +280,7 @@ local function DrawRaidGrid(columnIndex, y, encounters, difficultyColor, onEnter
       bg = enc.isKilled and GG.Theme.success or GG.Theme.background,
       border = difficultyColor or GG.Theme.border,
       edgeSize = 1.5,
+      radius = 4,
     })
     box:EnableMouse(true)
     box:SetScript("OnEnter", onEnter)

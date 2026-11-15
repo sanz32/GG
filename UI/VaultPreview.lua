@@ -25,14 +25,10 @@ local function BuildPopup()
   popup:SetScript("OnDragStart", popup.StartMoving)
   popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
   popup:SetClampedToScreen(true)
-  GG.Widgets.ApplyPanel(popup, { bg = GG.Theme.background, corners = "all" })
+  GG.Widgets.ApplyPopup(popup)
   tinsert(UISpecialFrames, "GGVaultPreview")
 
-  local accentBar = popup:CreateTexture(nil, "ARTWORK")
-  accentBar:SetColorTexture(unpack(GG.Theme.accent))
-  accentBar:SetPoint("TOPLEFT")
-  accentBar:SetPoint("TOPRIGHT")
-  accentBar:SetHeight(2)
+  popup.accentBar = GG.Widgets.TopAccent(popup)
 
   popup.title = CreateLabel(popup, 13, nil, true)
   popup.title:SetPoint("TOPLEFT", 14, -12)
@@ -72,6 +68,7 @@ end
 function GG.UI:ShowVaultPreview(record)
   if not popup then BuildPopup() end
   ClearBody()
+  popup.accentBar:Paint()
 
   popup.title:SetText(("%s — %s-%s"):format(L["SECTION_VAULT"], record.name, record.realm))
 

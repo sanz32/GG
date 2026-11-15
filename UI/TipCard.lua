@@ -199,24 +199,26 @@ local function ReleaseUnused()
   end
 end
 
+local TIP_RADIUS = 6
+
 local function CreateCard()
   local Theme = GG.Theme
   local f = CreateFrame("Frame", "GGTipCard", UIParent, "BackdropTemplate")
   f:SetFrameStrata("TOOLTIP")
   f:SetClampedToScreen(true)
   f:Hide()
-  GG.Widgets.ApplyPanel(f, { bg = EDGE_COLOR, tint = EDGE_COLOR })
+  GG.Widgets.ApplyPanel(f, { bg = EDGE_COLOR, tint = EDGE_COLOR, radius = TIP_RADIUS })
   local body = CreateFrame("Frame", nil, f, "BackdropTemplate")
   body:SetPoint("TOPLEFT", 1, -1)
   body:SetPoint("BOTTOMRIGHT", -1, 1)
   local bg = Theme.background
   f.bodyColor = { bg[1], bg[2], bg[3], 1 }
-  f.panel = GG.Widgets.ApplyPanel(body, { bg = f.bodyColor, tint = Theme.panel, radius = Theme.cornerRadius - 1 })
+  f.panel = GG.Widgets.ApplyPanel(body, { bg = f.bodyColor, tint = Theme.panel, radius = TIP_RADIUS - 1 })
   f.body = body
 
   f.headFill = body:CreateTexture(nil, "ARTWORK")
-  f.headFill:SetPoint("TOPLEFT", 0, -(Theme.cornerRadius - 1))
-  f.headFill:SetPoint("TOPRIGHT", 0, -(Theme.cornerRadius - 1))
+  f.headFill:SetPoint("TOPLEFT", 0, -(TIP_RADIUS - 1))
+  f.headFill:SetPoint("TOPRIGHT", 0, -(TIP_RADIUS - 1))
   f.headLine = body:CreateTexture(nil, "ARTWORK", nil, 1)
   f.headLine:SetHeight(1)
   f.footLine = body:CreateTexture(nil, "ARTWORK", nil, 1)
@@ -633,7 +635,7 @@ function Tip.Render(built)
     local line = Tip.Blend(Theme.border, color, 0.27)
     PaintTopBand(fill)
     card.headFill:SetColorTexture(fill[1], fill[2], fill[3], 1)
-    card.headFill:SetHeight(head.height - Theme.cornerRadius + 1)
+    card.headFill:SetHeight(head.height - TIP_RADIUS + 1)
     card.headFill:Show()
     card.headLine:SetColorTexture(line[1], line[2], line[3], 1)
     card.headLine:ClearAllPoints()

@@ -25,10 +25,8 @@ Panel.state = state
 
 local function Fade(c, a) return { c[1], c[2], c[3], a } end
 
-local function Backdrop(f, bg, border)
-  f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
-  f:SetBackdropColor(unpack(bg))
-  f:SetBackdropBorderColor(unpack(border or Theme.border))
+local function Backdrop(f, bg, border, radius)
+  GG.Widgets.Backdrop(f, bg, border or Theme.border, radius)
 end
 
 local function Text(parent, size, color, bold)
@@ -178,7 +176,10 @@ local function Describe(e)
   if k == "bossIconStyle" then return L["BOSS_STYLE_HEADER"], BossStyleName(e.old), BossStyleName(e.new) end
   if k == "raidDifficulties" then return L[DIFFICULTY_KEYS[sub]] or tostring(sub), ShownHidden(e.old), ShownHidden(e.new) end
   if k == "layoutMode" then
-    local function v(x) return x == "vertical" and L["OPT_LAYOUT_COLUMNS"] or L["OPT_LAYOUT_ROWS"] end
+    local function v(x)
+      if x == "accounts" then return L["LAYOUT_ACCOUNTS"] end
+      return x == "vertical" and L["OPT_LAYOUT_COLUMNS"] or L["OPT_LAYOUT_ROWS"]
+    end
     return L["OPT_LAYOUT"], v(e.old), v(e.new)
   end
   if k == "maxVisibleCharacters" then
@@ -217,6 +218,9 @@ local function Describe(e)
   if k == "announceTexts" then return L[ANNOUNCE_TEXT_LABELS[sub]] or sub, Quote(e.old), Quote(e.new) end
   if k == "popupRosterCall" then return L["POPUP_ROSTER_CALL"], OnOff(e.old), OnOff(e.new) end
   if k == "rosterCallSound" then return L["POPUP_ROSTER_CALL_SOUND"], OnOff(e.old), OnOff(e.new) end
+  if k == "rosterCallPill" then return L["POPUP_ROSTER_CALL_PILL"], OnOff(e.old), OnOff(e.new) end
+  if k == "rosterAutoInvite" then return L["POPUP_ROSTER_AUTO_INVITE"], OnOff(e.old), OnOff(e.new) end
+  if k == "rosterAutoAccept" then return L["POPUP_ROSTER_AUTO_ACCEPT"], OnOff(e.old), OnOff(e.new) end
   if k == "rosterCallStyle" then
     local function v(x) return L["RC_STYLE_" .. string.upper(x or "band")] end
     return L["POPUP_ROSTER_CALL_STYLE"], v(e.old), v(e.new)
@@ -232,7 +236,7 @@ local function Tags(o)
     ThemeName(o.theme),
     BossStyleName(o.bossIconStyle),
     Percent(o.windowScale),
-    o.layoutMode == "vertical" and L["OPT_LAYOUT_COLUMNS"] or L["OPT_LAYOUT_ROWS"],
+    (o.layoutMode == "accounts" and L["LAYOUT_ACCOUNTS"]) or (o.layoutMode == "vertical" and L["OPT_LAYOUT_COLUMNS"]) or L["OPT_LAYOUT_ROWS"],
   }
 end
 
@@ -451,7 +455,7 @@ end
 
 local function Segmented(container, y, ctx)
   local seg = CreateFrame("Frame", nil, container, "BackdropTemplate")
-  Backdrop(seg, NAV_BG, Theme.border)
+  Backdrop(seg, NAV_BG, Theme.border, 6)
   seg:SetPoint("TOPLEFT", 0, -y)
   seg:SetHeight(28)
   local x = 2
@@ -459,9 +463,7 @@ local function Segmented(container, y, ctx)
     local on = state.tab == tab
     local b = CreateFrame("Button", nil, seg)
     b:SetHeight(24)
-    local bg = b:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(unpack(on and Theme.accent or { 0, 0, 0, 0 }))
+    if on then GG.Widgets.RoundedFill(b, b, 4, "BACKGROUND"):SetColor(Theme.accent) end
     local t = Text(b, 12, on and Theme.onAccent or Theme.textMuted, true)
     t:SetPoint("CENTER")
     t:SetText(L[tab == "export" and "PROFILE_TAB_EXPORT" or "PROFILE_TAB_IMPORT"])
@@ -513,8 +515,8 @@ local function ExportPane(container, y, width, ctx)
     holder:SetPoint("TOPLEFT", 0, -top)
     local edge = holder:CreateTexture(nil, "OVERLAY")
     edge:SetColorTexture(unpack(Theme.accent))
-    edge:SetPoint("TOPLEFT")
-    edge:SetPoint("BOTTOMLEFT")
+    edge:SetPoint("TOPLEFT", 1, -8)
+    edge:SetPoint("BOTTOMLEFT", 1, 8)
     edge:SetWidth(3)
     local text = state.exportText
     box:SetText(text)

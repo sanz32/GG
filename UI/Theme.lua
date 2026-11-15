@@ -16,6 +16,8 @@ GG.Theme = {
   iconCrop = { 0.08, 0.92, 0.08, 0.92 },
 
   background = { 0.078, 0.086, 0.109, 0.97 },
+  level0     = { 0.067, 0.075, 0.094, 1 },
+  level1     = { 0.094, 0.102, 0.129, 1 },
   panel      = { 0.110, 0.122, 0.153, 1 },
   border     = { 0.165, 0.180, 0.220, 1 },
   accent     = { 0.545, 0.361, 0.965, 1 },
@@ -40,7 +42,7 @@ GG.Theme = {
   gradientFrom = { 0.114, 0.098, 0.161, 0.97 },
   gradientTo   = { 0.078, 0.086, 0.109, 0.97 },
 
-  cornerRadius = 6,
+  cornerRadius = 10,
 
   media = {
     cornerMask    = [[Interface\AddOns\GG\Media\corner-mask.png]],
@@ -53,6 +55,11 @@ GG.Theme = {
     logoMinimap   = [[Interface\AddOns\GG\Media\logo-minimap.png]],
     clock         = [[Interface\AddOns\GG\Media\Clock32.tga]],
     dot           = [[Interface\AddOns\GG\Media\Dot32.tga]],
+    windowShadow  = [[Interface\AddOns\GG\Media\WindowShadow128.tga]],
+    edgeRing      = [[Interface\AddOns\GG\Media\EdgeRing64.tga]],
+    close         = [[Interface\AddOns\GG\Media\Close32.tga]],
+    star          = [[Interface\AddOns\GG\Media\Star32.tga]],
+    roundMask     = [[Interface\AddOns\GG\Media\RoundMask64.tga]],
   },
 }
 

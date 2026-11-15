@@ -618,6 +618,10 @@ function RT.PaintSurface(row, geom, ctx)
 
   local cc, headTint, headFade = ctx.classColor, tok.headTint, tok.headFade
   local listTint, listFade = tok.listCharTint, tok.listCharFade
+  headTint = math.max(headTint or 0, 0.12)
+  headFade = math.max(headFade or 0, 0.78)
+  listTint = math.max(listTint or 0, 0.10)
+  listFade = listFade or 0.85
   if bannerFill then
     cc, headTint, headFade, listTint, listFade = accent, tok.markFillHead, 1, tok.markFillHead, 1
   end

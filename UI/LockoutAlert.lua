@@ -65,11 +65,11 @@ local function EnsureFrame()
   frame:RegisterForDrag("LeftButton")
   frame:SetScript("OnDragStart", frame.StartMoving)
   frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
-  GG.Widgets.ApplyPanel(frame, { bg = Theme.background, corners = "all" })
+  GG.Widgets.ApplyPopup(frame)
 
   frame.accent = frame:CreateTexture(nil, "ARTWORK")
-  frame.accent:SetPoint("TOPLEFT")
-  frame.accent:SetPoint("TOPRIGHT")
+  frame.accent:SetPoint("TOPLEFT", tonumber(Theme.cornerRadius) or 10, 0)
+  frame.accent:SetPoint("TOPRIGHT", -(tonumber(Theme.cornerRadius) or 10), 0)
   frame.accent:SetHeight(3)
 
   frame.title = CreateText(frame, 15, Theme.textPrimary, true)
@@ -218,23 +218,15 @@ function GG.LockoutAlert:RenderGroupAlert()
   local lookup = GG.Lockouts:BuildKilledLookup(record)
   local unconfirmed = not GG.Lockouts:HasServerData()
 
-  local anySaved = false
-  local index, y = 1, 0
   local catalog = GG.Lockouts:GetRaidBossCatalog()
+  local raids = GG.Season.RAIDS or {}
 
-  local rows, labelWidth, statusWidth, titleWidth = {}, 0, 0, 0
-
-  for _, raid in ipairs(GG.Season.RAIDS or {}) do
+  local anySaved = false
+  local counts = {}
+  for r, raid in ipairs(raids) do
     local range = GG.Lockouts:RaidSlotRange(raid.instanceID)
     local slotOffset = (range and range.offset) or 0
-    local entry = catalog[raid.instanceID]
-
-    local titleLine = PrepareLine(index, (entry and entry.name) or raid.name or "?",
-      Theme.accent, true, GROUP_RAID_SIZE)
-    titleWidth = math.max(titleWidth, TextWidth(titleLine))
-    table.insert(rows, { line = titleLine, kind = "raid" })
-    index = index + 1
-
+    counts[r] = {}
     for _, difficultyID in ipairs(GG.Lockouts.SHARED_DIFFICULTIES) do
       local slots = GG.Lockouts:BuildDifficultySlots(record, difficultyID, lookup)
       local killed = 0
@@ -242,25 +234,65 @@ function GG.LockoutAlert:RenderGroupAlert()
         if slots[slotOffset + i] then killed = killed + 1 end
       end
       if killed > 0 then anySaved = true end
-
-      local text, color = StatusText(killed, raid.numEncounters or 0, unconfirmed)
-      local label = PrepareLine(index, L[DIFFICULTY_LABEL_KEYS[difficultyID]],
-        Theme.textMuted, false, GROUP_ROW_SIZE)
-      local status = PrepareLine(index + 1, text, color, false, GROUP_ROW_SIZE)
-      status:SetJustifyH("LEFT")
-      labelWidth = math.max(labelWidth, TextWidth(label))
-      statusWidth = math.max(statusWidth, TextWidth(status))
-      table.insert(rows, { line = label, status = status, kind = "difficulty" })
-      index = index + 2
+      counts[r][difficultyID] = killed
     end
-    table.insert(rows, { kind = "gap" })
+  end
+
+  local index, y = 1, 0
+  local rows, labelWidth, statusWidth, titleWidth, noteWidth = {}, 0, 0, 0, 0
+
+  local function AddNote(text, color)
+    local note = PrepareLine(index, text, color, false, GROUP_ROW_SIZE - 1)
+    noteWidth = math.max(noteWidth, TextWidth(note))
+    table.insert(rows, { line = note, kind = "note" })
+    index = index + 1
+  end
+
+  if anySaved then
+    for r, raid in ipairs(raids) do
+      local any = false
+      for _, difficultyID in ipairs(GG.Lockouts.SHARED_DIFFICULTIES) do
+        if counts[r][difficultyID] > 0 then any = true end
+      end
+      if any then
+        local entry = catalog[raid.instanceID]
+        local titleLine = PrepareLine(index, (entry and entry.name) or raid.name or "?",
+          Theme.accent, true, GROUP_RAID_SIZE)
+        titleWidth = math.max(titleWidth, TextWidth(titleLine))
+        table.insert(rows, { line = titleLine, kind = "raid" })
+        index = index + 1
+
+        for _, difficultyID in ipairs(GG.Lockouts.SHARED_DIFFICULTIES) do
+          local killed = counts[r][difficultyID]
+          if killed > 0 then
+            local text, color = StatusText(killed, raid.numEncounters or 0, unconfirmed)
+            local label = PrepareLine(index, L[DIFFICULTY_LABEL_KEYS[difficultyID]],
+              Theme.textMuted, false, GROUP_ROW_SIZE)
+            local status = PrepareLine(index + 1, text, color, false, GROUP_ROW_SIZE)
+            status:SetJustifyH("LEFT")
+            labelWidth = math.max(labelWidth, TextWidth(label))
+            statusWidth = math.max(statusWidth, TextWidth(status))
+            table.insert(rows, { line = label, status = status, kind = "difficulty" })
+            index = index + 2
+          end
+        end
+        table.insert(rows, { kind = "gap" })
+      end
+    end
+    AddNote(unconfirmed and L["LOCKOUT_ALERT_GROUP_REST_UNCONFIRMED"] or L["LOCKOUT_ALERT_GROUP_REST_UNSAVED"],
+      unconfirmed and Theme.gold or Theme.textMuted)
+  elseif unconfirmed then
+    AddNote(L["LOCKOUT_ALERT_GROUP_UNCONFIRMED_SUMMARY"], Theme.gold)
+  else
+    AddNote(#raids == 1 and L["LOCKOUT_ALERT_GROUP_CLEAN_SUMMARY_ONE"]
+      or L["LOCKOUT_ALERT_GROUP_CLEAN_SUMMARY"]:format(#raids), Theme.textPrimary)
   end
 
   HideLinesFrom(index)
 
   local INDENT, COL_GAP = 16, 26
   local statusX = INDENT + labelWidth + COL_GAP
-  local contentWidth = math.max(titleWidth, statusX + statusWidth)
+  local contentWidth = math.max(titleWidth, noteWidth, statusWidth > 0 and (statusX + statusWidth) or 0)
 
   local bodyWidth = math.max(MIN_WIDTH - PAD_X * 2, contentWidth)
   local x0 = math.max(0, (bodyWidth - contentWidth) / 2)
@@ -272,13 +304,15 @@ function GG.LockoutAlert:RenderGroupAlert()
     elseif row.kind == "raid" then
       PlaceLine(row.line, x0, y)
       y = y + 24
+    elseif row.kind == "note" then
+      PlaceLine(row.line, math.max(0, (bodyWidth - TextWidth(row.line)) / 2), y)
+      y = y + 21
     else
       PlaceLine(row.line, x0 + INDENT, y)
       PlaceLine(row.status, x0 + statusX, y)
       y = y + 21
     end
   end
-  y = y - 12
 
   frame.title:SetFont(Theme.fontBold, GROUP_TITLE_SIZE, "")
   local title, tone = L["LOCKOUT_ALERT_GROUP_TITLE_CLEAN"], Theme.success

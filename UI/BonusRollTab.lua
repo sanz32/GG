@@ -14,10 +14,11 @@ local ROW_H = 38
 local ICON = 28
 local CARD_W, CARD_GAP = 440, 14
 local LANE_ICONS_X = 156
-local LANE_H = 44
-local LANE_ICONS_MAX = 3
+local LANE_H = 32
+local LANES_MAX = 4
 local ART_H = 50
-local CARD_HEADER = 10 + ART_H + 10
+local CARD_ART_H = 38
+local CARD_HEADER = 8 + CARD_ART_H + 8
 local ART_CROP = 0.06
 local FALLBACK_ART = {
   delve = "Interface\\Icons\\INV_Misc_Key_03",
@@ -69,10 +70,8 @@ local function CreateRule(parent)
   return tex
 end
 
-local function SetBackdrop(f, bg, border)
-  f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-  f:SetBackdropColor(unpack(bg))
-  f:SetBackdropBorderColor(unpack(border))
+local function SetBackdrop(f, bg, border, radius)
+  GG.Widgets.Backdrop(f, bg, border, radius)
 end
 
 local function SpecInfo(specID)
@@ -197,13 +196,13 @@ local function BuildToggle(parent, labelText, options, onPick)
     holder.label:SetPoint("LEFT", 0, 0)
   end
   local seg = CreateFrame("Frame", nil, holder, "BackdropTemplate")
-  SetBackdrop(seg, NAV_BG, Theme.border)
+  SetBackdrop(seg, NAV_BG, Theme.border, 6)
   seg:SetHeight(26)
   for _, option in ipairs(options) do
     local btn = CreateFrame("Button", nil, seg)
     btn:SetHeight(22)
-    btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-    btn.bg:SetAllPoints()
+    btn.bg = GG.Widgets.RoundedFill(btn, btn, 4, "BACKGROUND")
+    btn.bg:SetColor(0, 0, 0, 0)
     btn.label = CreateText(btn, 10.5, Theme.textMuted, true)
     btn.label:SetPoint("CENTER")
     btn.label:SetJustifyH("CENTER")
@@ -212,10 +211,10 @@ local function BuildToggle(parent, labelText, options, onPick)
     local key = option.key
     btn:SetScript("OnClick", function() onPick(key) end)
     btn:SetScript("OnEnter", function(self)
-      if not self.active then self.bg:SetColorTexture(1, 1, 1, 0.06) end
+      if not self.active then self.bg:SetColor(1, 1, 1, 0.06) end
     end)
     btn:SetScript("OnLeave", function(self)
-      if not self.active then self.bg:SetColorTexture(0, 0, 0, 0) end
+      if not self.active then self.bg:SetColor(0, 0, 0, 0) end
     end)
     holder.buttons[key] = btn
   end
@@ -243,7 +242,7 @@ local function PaintToggle(holder, activeKey)
   for key, btn in pairs(holder.buttons) do
     local active = key == (activeKey or ALL)
     btn.active = active
-    btn.bg:SetColorTexture(unpack(active and Theme.accent or { 0, 0, 0, 0 }))
+    btn.bg:SetColor(active and Theme.accent or { 0, 0, 0, 0 })
     btn.label:SetTextColor(unpack(active and Theme.onAccent or Theme.textMuted))
   end
 end
@@ -269,15 +268,7 @@ local function UpdateCharacterOptions(rows)
   container.charDropdown.Refresh()
 end
 
-local function BuildSnaps(starts, contentH, listH)
-  local snaps = {}
-  for _, top in ipairs(starts) do
-    snaps[#snaps + 1] = top
-    if contentH - top <= listH + 0.5 then break end
-  end
-  if #snaps == 0 then snaps[1] = 0 end
-  return snaps
-end
+local SNAP_OVERLAP = 40
 
 local function NearestSnap(snaps, target)
   local best = 1
@@ -287,9 +278,9 @@ local function NearestSnap(snaps, target)
   return best
 end
 
-local function ApplySnaps(starts, contentH)
+local function ApplySnaps(starts, contentH, heights)
   local list = container.list
-  local snaps = BuildSnaps(starts, contentH, list:GetHeight())
+  local snaps = GG.Layout.ScrollSnaps(starts, heights, contentH, list:GetHeight(), SNAP_OVERLAP)
   list.snaps = snaps
   list.offset = snaps[NearestSnap(snaps, list.offset or 0)]
   list.contentHeight = contentH
@@ -297,7 +288,7 @@ local function ApplySnaps(starts, contentH)
 end
 
 local function Fits(top, height)
-  return top >= -0.5 and top + height <= container.list:GetHeight() + 0.5
+  return GG.Layout.RowVisible(top, height, container.list:GetHeight())
 end
 
 local function UpdateScrollbar()
@@ -350,7 +341,7 @@ local function EnsureLogRow(index)
   row.iconBorder = CreateFrame("Frame", nil, row.result, "BackdropTemplate")
   row.iconBorder:SetPoint("TOPLEFT", row.icon, "TOPLEFT", -1, 1)
   row.iconBorder:SetPoint("BOTTOMRIGHT", row.icon, "BOTTOMRIGHT", 1, -1)
-  row.iconBorder:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+  GG.Widgets.Backdrop(row.iconBorder, nil, { 1, 1, 1, 1 }, 0)
   row.name = CreateText(row.result, 12, Theme.textPrimary, true)
   row.name:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 7, 1)
   row.name:SetWidth(COLX.result.w - ICON - 10)
@@ -363,7 +354,7 @@ local function EnsureLogRow(index)
   row.tag = CreateFrame("Frame", nil, row, "BackdropTemplate")
   row.tag:SetHeight(17)
   row.tag:SetPoint("TOPLEFT", COLX.where.x, -4)
-  row.tag:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+  GG.Widgets.Backdrop(row.tag, nil, { 1, 1, 1, 1 }, 4)
   row.tag.text = CreateText(row.tag, 9, Theme.textPrimary, true)
   row.tag.text:SetPoint("CENTER")
   row.boss = CreateText(row, 12, Theme.textPrimary, true)
@@ -452,7 +443,7 @@ local function EnsureItemRow(lane, index)
   row.border = CreateFrame("Frame", nil, row, "BackdropTemplate")
   row.border:SetSize(ITEM_ICON, ITEM_ICON)
   row.border:SetPoint("LEFT", 0, 0)
-  row.border:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+  GG.Widgets.Backdrop(row.border, nil, { 1, 1, 1, 1 }, 0)
   row.tex = row.border:CreateTexture(nil, "ARTWORK")
   row.tex:SetPoint("TOPLEFT", 1, -1)
   row.tex:SetPoint("BOTTOMRIGHT", -1, 1)
@@ -479,19 +470,20 @@ local function EnsureLane(card, index)
   lane.rule:SetPoint("TOPRIGHT", 0, 0)
   lane.rule:SetColorTexture(1, 1, 1, 0.05)
   lane.specIcon = lane:CreateTexture(nil, "ARTWORK")
-  lane.specIcon:SetSize(19, 19)
-  lane.specIcon:SetPoint("TOPLEFT", 0, -6)
+  lane.specIcon:SetSize(16, 16)
+  lane.specIcon:SetPoint("TOPLEFT", 0, -8)
   lane.spec = CreateText(lane, 11, Theme.textPrimary, true)
-  lane.spec:SetPoint("TOPLEFT", lane.specIcon, "TOPRIGHT", 5, 0)
+  lane.spec:SetPoint("TOPLEFT", lane, "TOPLEFT", 21, -3)
   lane.spec:SetWidth(LANE_ICONS_X - 26)
+  lane.spec:SetWordWrap(false)
   lane.who = CreateText(lane, 9.5, Theme.textFaint)
   lane.who:SetPoint("TOPLEFT", lane.spec, "BOTTOMLEFT", 0, -1)
   lane.who:SetWidth(LANE_ICONS_X - 26)
-  lane.rolls = CreateText(lane, 9.5, Theme.textFaint)
+  lane.who:SetWordWrap(false)
   lane.items = {}
   lane.more = CreateFrame("Button", nil, lane)
-  lane.more:SetHeight(17)
-  lane.more.text = CreateText(lane.more, 10.5, Theme.accent, true)
+  lane.more:SetHeight(24)
+  lane.more.text = CreateText(lane.more, 11, Theme.accent, true)
   lane.more.text:SetPoint("LEFT", 0, 0)
   lane.more:SetScript("OnEnter", function(self) self.text:SetTextColor(1, 1, 1, 1) end)
   lane.more:SetScript("OnLeave", function(self) self.text:SetTextColor(unpack(Theme.accent)) end)
@@ -507,24 +499,19 @@ local function EnsureCard(index)
   if card then return card end
   card = CreateFrame("Frame", nil, container.list, "BackdropTemplate")
   card:SetWidth(CARD_W)
-  SetBackdrop(card, Theme.panel, Theme.border)
-  card.band = card:CreateTexture(nil, "BACKGROUND", nil, 2)
-  card.band:SetPoint("TOPLEFT", 1, -1)
-  card.band:SetPoint("TOPRIGHT", -1, -1)
-  card.band:SetHeight(CARD_HEADER - 1)
-  card.band:SetColorTexture(1, 1, 1, 1)
+  SetBackdrop(card, Theme.panel, Theme.border, 9)
+  card.band = GG.Widgets.TopBand(card, 1, 9, CARD_HEADER - 1, "BACKGROUND", 2)
   card.bandLine = card:CreateTexture(nil, "ARTWORK")
   card.bandLine:SetHeight(1)
   card.bandLine:SetPoint("TOPLEFT", 1, -CARD_HEADER)
   card.bandLine:SetPoint("TOPRIGHT", -1, -CARD_HEADER)
   card.bandLine:SetColorTexture(unpack(Theme.borderSoft))
   card.art = card:CreateTexture(nil, "ARTWORK")
-  card.art:SetPoint("TOPLEFT", 12, -10)
+  card.art:SetPoint("TOPLEFT", 12, -8)
   card.artBorder = CreateFrame("Frame", nil, card, "BackdropTemplate")
   card.artBorder:SetPoint("TOPLEFT", card.art, "TOPLEFT", -1, 1)
   card.artBorder:SetPoint("BOTTOMRIGHT", card.art, "BOTTOMRIGHT", 1, -1)
-  card.artBorder:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-  card.artBorder:SetBackdropBorderColor(unpack(Theme.borderSoft))
+  GG.Widgets.Backdrop(card.artBorder, nil, Theme.borderSoft, 0)
   card.title = CreateText(card, 13, Theme.textPrimary, true)
   card.title:SetPoint("TOPLEFT", card.art, "TOPRIGHT", 10, 0)
   card.diff = CreateText(card, 11, Theme.textPrimary, true)
@@ -532,38 +519,52 @@ local function EnsureCard(index)
   card.place = CreateText(card, 10, Theme.textFaint)
   card.place:SetPoint("TOPLEFT", card.diff, "BOTTOMLEFT", 0, -2)
   card.lanes = {}
+  card.moreLanes = CreateFrame("Button", nil, card)
+  card.moreLanes:SetHeight(20)
+  card.moreLanes.text = CreateText(card.moreLanes, 10.5, Theme.accent, true)
+  card.moreLanes.text:SetPoint("LEFT", 0, 0)
+  card.moreLanes:SetScript("OnEnter", function(self) self.text:SetTextColor(1, 1, 1, 1) end)
+  card.moreLanes:SetScript("OnLeave", function(self) self.text:SetTextColor(unpack(Theme.accent)) end)
+  card.moreLanes:SetScript("OnClick", function(self)
+    if self.group then GG.BonusRollTab:ShowDetail(self.group) end
+  end)
+  card.moreLanes:Hide()
   container.cards[index] = card
   return card
 end
 
-local function PaintLane(lane, data, showCharacter, group)
+local ICON_STEP = ITEM_ICON + 4
+
+local function PaintLane(lane, data, showCharacter, group, laneW)
   local specName, specIcon = SpecInfo(data.specID)
   GG.Widgets.SetItemIcon(lane.specIcon, specIcon)
-  lane.spec:SetText(specName)
-  lane.who:SetText(showCharacter and ("%s-%s"):format(data.row.name, data.row.realm) or "")
-  lane.who:SetTextColor(unpack(ClassColor(data.row)))
-  lane.rolls:ClearAllPoints()
-  lane.rolls:SetPoint("TOPLEFT", showCharacter and lane.who or lane.spec, "BOTTOMLEFT", 0, -1)
-  lane.rolls:SetText(data.rolls == 1 and L["BR_ROLL_ONE"] or L["BR_ROLLS"]:format(data.rolls))
+  local rolls = data.rolls == 1 and L["BR_ROLL_ONE"] or L["BR_ROLLS"]:format(data.rolls)
+  if showCharacter then
+    lane.spec:SetText(("%s-%s"):format(data.row.name, data.row.realm))
+    lane.spec:SetTextColor(unpack(ClassColor(data.row)))
+    lane.who:SetText(("%s · %s"):format(specName or "", rolls))
+  else
+    lane.spec:SetText(specName)
+    lane.spec:SetTextColor(unpack(Theme.textPrimary))
+    lane.who:SetText(rolls)
+  end
 
-  local shown = math.min(#data.entries, LANE_ICONS_MAX)
-  local y = 4
+  local fit = math.max(1, math.floor(((laneW or CARD_W - 24) - LANE_ICONS_X - 34) / ICON_STEP))
+  local shown = math.min(#data.entries, fit)
   for i = 1, shown do
     local entry = data.entries[i]
     local row = EnsureItemRow(lane, i)
-    local icon, name, color = DescribeResult(entry)
+    local icon, _, color = DescribeResult(entry)
     GG.Widgets.SetItemIcon(row.tex, icon)
     row.border:SetBackdropBorderColor(color[1], color[2], color[3], entry.kind == "item" and 0.9 or 0.35)
-    row.name:SetText(name)
-    row.name:SetTextColor(unpack(color))
-    row.ilvl:SetText(entry.itemLevel and tostring(entry.itemLevel) or "")
+    row.name:Hide()
+    row.ilvl:Hide()
     row:SetAlpha(entry.kind == "money" and 0.6 or 1)
     row.entry = entry
     row:ClearAllPoints()
-    row:SetPoint("TOPLEFT", lane, "TOPLEFT", LANE_ICONS_X, -y)
-    row:SetPoint("RIGHT", lane, "RIGHT", 0, 0)
+    row:SetSize(ITEM_ICON, ITEM_ICON)
+    row:SetPoint("TOPLEFT", lane, "TOPLEFT", LANE_ICONS_X + (i - 1) * ICON_STEP, -4)
     row:Show()
-    y = y + ITEM_ROW_H
   end
   for i = shown + 1, #lane.items do lane.items[i]:Hide() end
 
@@ -571,13 +572,12 @@ local function PaintLane(lane, data, showCharacter, group)
   lane.more:SetShown(extra > 0)
   if extra > 0 then
     lane.more:ClearAllPoints()
-    lane.more:SetPoint("TOPLEFT", lane, "TOPLEFT", LANE_ICONS_X + ITEM_ICON + 6, -y)
-    lane.more.text:SetText(L["BR_MORE"]:format(extra))
-    lane.more:SetWidth(lane.more.text:GetStringWidth() + 4)
+    lane.more:SetPoint("TOPLEFT", lane, "TOPLEFT", LANE_ICONS_X + shown * ICON_STEP + 2, -4)
+    lane.more.text:SetText(("+%d"):format(extra))
+    lane.more:SetWidth(lane.more.text:GetStringWidth() + 6)
     lane.more.group = group
-    y = y + 20
   end
-  return math.max(LANE_H + 6, y + 4)
+  return LANE_H
 end
 
 local atlasCoords = {}
@@ -594,7 +594,8 @@ local function AtlasBaseCoords(atlas)
   return left, right, top, bottom
 end
 
-local function PaintArt(tex, sample)
+local function PaintArt(tex, sample, artH)
+  local ART_H = artH or ART_H
   local texture, kind = GG.BonusRoll:Portrait(sample)
   local artW = ART_H
   if kind == "wide" then
@@ -647,7 +648,7 @@ local function PaintCard(card, group, showCharacter, duplicated, cardW)
   local sample = group.sample
   local main, secondary = DescribeWhere(sample)
 
-  local artW = PaintArt(card.art, sample)
+  local artW = PaintArt(card.art, sample, CARD_ART_H)
   local textW = cardW - 24 - artW - 10
   card.title:SetWidth(textW)
   card.diff:SetWidth(textW)
@@ -659,22 +660,33 @@ local function PaintCard(card, group, showCharacter, duplicated, cardW)
   card.diff:SetTextColor(unpack(diffColor))
   card.place:SetText(secondary)
   local tint = (KIND[sample.content] or KIND.raid).color
-  card.band:SetGradient("VERTICAL", CreateColor(tint[1], tint[2], tint[3], 0),
-    CreateColor(tint[1], tint[2], tint[3], 0.13))
+  card.band:SetGradientV(tint[1], tint[2], tint[3], 0.13, 0)
 
   local y = CARD_HEADER
-  for i, data in ipairs(group.lanes) do
+  local laneCount = math.min(#group.lanes, LANES_MAX)
+  for i = 1, laneCount do
+    local data = group.lanes[i]
     local lane = EnsureLane(card, i)
     lane:ClearAllPoints()
     lane:SetPoint("TOPLEFT", card, "TOPLEFT", 12, -y)
     lane:SetPoint("RIGHT", card, "RIGHT", -12, 0)
-    local laneH = PaintLane(lane, data, showCharacter, group)
+    local laneH = PaintLane(lane, data, showCharacter, group, cardW - 24)
     lane.rule:SetShown(i > 1)
     lane:SetHeight(laneH)
     lane:Show()
     y = y + laneH
   end
-  for i = #group.lanes + 1, #card.lanes do card.lanes[i]:Hide() end
+  for i = laneCount + 1, #card.lanes do card.lanes[i]:Hide() end
+  local extra = #group.lanes - laneCount
+  card.moreLanes:SetShown(extra > 0)
+  if extra > 0 then
+    card.moreLanes:ClearAllPoints()
+    card.moreLanes:SetPoint("TOPLEFT", card, "TOPLEFT", 12, -(y + 2))
+    card.moreLanes.text:SetText(L["BR_MORE_LANES"]:format(extra))
+    card.moreLanes:SetWidth(card.moreLanes.text:GetStringWidth() + 4)
+    card.moreLanes.group = group
+    y = y + 20
+  end
   return y + 6
 end
 
@@ -700,8 +712,9 @@ local function PaintBosses(collected, duplicated)
     contentH = contentH + h + CARD_GAP
   end
   contentH = math.max(0, contentH - CARD_GAP)
-  local offset = ApplySnaps(tops, contentH)
-  local hiddenBelow, shownBottom = 0, 0
+  local offset = ApplySnaps(tops, contentH, heights)
+  local listH = container.list:GetHeight()
+  local hiddenBelow, shownBottom, anyShown = 0, 0, false
   for i = 1, #groups do
     local col = (i - 1) % columns
     local cardRow = math.floor((i - 1) / columns) + 1
@@ -713,9 +726,20 @@ local function PaintBosses(collected, duplicated)
     local fits = Fits(y, heights[cardRow])
     card:SetShown(fits)
     if fits then
-      shownBottom = math.max(shownBottom, y + heights[cardRow])
+      anyShown = true
+      shownBottom = math.max(shownBottom, math.min(listH, y + heights[cardRow]))
     elseif y > 0 then
       hiddenBelow = hiddenBelow + 1
+    end
+  end
+  if not anyShown and #groups > 0 and listH > 0 then
+    local target = 1
+    for r = 1, #tops do
+      if tops[r] >= offset - 0.5 then target = r break end
+    end
+    for i = (target - 1) * columns + 1, math.min(#groups, target * columns) do
+      container.cards[i]:Show()
+      if tops[target] - offset > 0 then hiddenBelow = hiddenBelow - 1 end
     end
   end
   for i = #groups + 1, #container.cards do container.cards[i]:Hide() end
@@ -752,18 +776,14 @@ local function BuildDetail()
   detail:SetScript("OnDragStart", detail.StartMoving)
   detail:SetScript("OnDragStop", detail.StopMovingOrSizing)
   detail:SetClampedToScreen(true)
-  GG.Widgets.ApplyPanel(detail, { bg = Theme.background, corners = "all" })
+  GG.Widgets.ApplyPopup(detail)
   local solid = detail:CreateTexture(nil, "BACKGROUND", nil, -7)
   solid:SetPoint("TOPLEFT", 3, -3)
   solid:SetPoint("BOTTOMRIGHT", -3, 3)
   solid:SetColorTexture(Theme.background[1], Theme.background[2], Theme.background[3], 1)
   tinsert(UISpecialFrames, "GGBonusRollDetail")
 
-  local bar = detail:CreateTexture(nil, "ARTWORK")
-  bar:SetColorTexture(unpack(Theme.accent))
-  bar:SetPoint("TOPLEFT")
-  bar:SetPoint("TOPRIGHT")
-  bar:SetHeight(2)
+  detail.accentBar = GG.Widgets.TopAccent(detail)
 
   detail.art = detail:CreateTexture(nil, "ARTWORK")
   detail.art:SetPoint("TOPLEFT", 14, -14)
@@ -836,7 +856,7 @@ local function EnsureDetailRow(index)
   row.border = CreateFrame("Frame", nil, row, "BackdropTemplate")
   row.border:SetSize(ITEM_ICON, ITEM_ICON)
   row.border:SetPoint("LEFT", 4, 0)
-  row.border:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+  GG.Widgets.Backdrop(row.border, nil, { 1, 1, 1, 1 }, 0)
   row.tex = row.border:CreateTexture(nil, "ARTWORK")
   row.tex:SetPoint("TOPLEFT", 1, -1)
   row.tex:SetPoint("BOTTOMRIGHT", -1, 1)
@@ -924,6 +944,7 @@ function GG.BonusRollTab:ShowDetail(group)
   detail.offset = math.min(detail.offset or 0, max)
   detail.content:ClearAllPoints()
   detail.content:SetPoint("TOPLEFT", detail.clip, "TOPLEFT", 0, detail.offset)
+  detail.accentBar:Paint()
   detail:Show()
 end
 
@@ -968,8 +989,7 @@ function GG.BonusRollTab:Attach(parent)
   container.demoBanner:SetHeight(24)
   container.demoBanner:SetPoint("TOPLEFT", 10, -10)
   container.demoBanner:SetPoint("TOPRIGHT", -10, -10)
-  container.demoBanner:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-  container.demoBanner:SetBackdropColor(Theme.danger[1], Theme.danger[2], Theme.danger[3], 0.25)
+  GG.Widgets.Backdrop(container.demoBanner, { Theme.danger[1], Theme.danger[2], Theme.danger[3], 0.25 }, nil, 6)
   container.demoBanner.text = CreateText(container.demoBanner, 11.5, Theme.danger, true)
   container.demoBanner.text:SetPoint("CENTER")
   container.demoBanner.text:SetText(L["BR_DEMO_BANNER"])
@@ -1103,6 +1123,12 @@ function GG.BonusRollTab:SetShown(shown)
   end
 end
 
+function GG.BonusRollTab.ResolveDifficulty(rows)
+  if state.content ~= "raid" or state.difficulty then return end
+  local latest = GG.BonusRoll:Collect(rows, { character = state.character, content = "raid" })[1]
+  state.difficulty = latest and GG.BonusRoll:DifficultyBucket(latest.entry) or "mythic"
+end
+
 function GG.BonusRollTab:Refresh()
   if not container or not container:IsShown() then return end
 
@@ -1127,10 +1153,7 @@ function GG.BonusRollTab:Refresh()
 
   local isRaid = state.content == "raid"
   container.difficulty:SetShown(isRaid)
-  if isRaid and not state.difficulty then
-    local latest = GG.BonusRoll:Collect(rows, { character = state.character, content = "raid" })[1]
-    state.difficulty = latest and GG.BonusRoll:DifficultyBucket(latest.entry) or "mythic"
-  end
+  GG.BonusRollTab.ResolveDifficulty(rows)
   PaintToggle(container.difficulty, state.difficulty)
 
   local isLog = state.view == "log"
@@ -1177,6 +1200,13 @@ end
 
 function GG.BonusRollTab:PreferredWidth()
   if state.view ~= "boss" then return GG.BonusRollTab.CONTENT_WIDTH end
+  if GG.BonusRoll and GG.Roster then
+    local rows = (GG.RosterUI and GG.RosterUI.AllRows and GG.RosterUI.AllRows()) or GG.Roster:BuildRows()
+    GG.BonusRollTab.ResolveDifficulty(rows)
+    local collected = GG.BonusRoll:Collect(rows, { character = state.character, content = state.content,
+      difficulty = state.content == "raid" and state.difficulty or nil })
+    state.groupCount = #GG.BonusRoll:GroupByBoss(collected)
+  end
   local cols = math.max(2, math.min(3, state.groupCount or 3))
   return cols * CARD_W + (cols - 1) * CARD_GAP + 32
 end

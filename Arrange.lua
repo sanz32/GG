@@ -19,9 +19,15 @@ for _, m in ipairs(A.MODES) do VALID_MODE[m] = true end
 function A.IsGroup(k) return A.GROUPS[k] == true end
 function A.IsValue(k) return A.VALUES[k] == true end
 
+local function Squash(s)
+  s = s:gsub("(%d)%s+%f[%d]", "%1\1")
+  s = s:gsub("%s+", "")
+  return (s:gsub("\1", " "))
+end
+
 function A.NaturalLess(rawA, rawB)
   rawA, rawB = tostring(rawA):lower(), tostring(rawB):lower()
-  local a, b = rawA:gsub("%s+", ""), rawB:gsub("%s+", "")
+  local a, b = Squash(rawA), Squash(rawB)
   if a == b then return rawA < rawB end
   local ia, ib = 1, 1
   while ia <= #a and ib <= #b do

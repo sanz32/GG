@@ -5,21 +5,15 @@ GG.VaultGrid = {}
 
 local ICON_SIZE = 40
 local SLOT_GAP = 6
-local ROW_GAP = 10
+local ROW_GAP = 6
 local ROW_LABEL_WIDTH = 66
-local ILVL_LABEL_HEIGHT = 14
+local ILVL_LABEL_HEIGHT = 12
 
 GG.VaultGrid.CONTENT_WIDTH = ROW_LABEL_WIDTH + ICON_SIZE * 3 + SLOT_GAP * 2
 GG.VaultGrid.CONTENT_HEIGHT = (ICON_SIZE + ILVL_LABEL_HEIGHT + ROW_GAP) * 3 - ROW_GAP
 
-local function ApplyBackdrop(f, bg, border)
-  f:SetBackdrop({
-    bgFile = "Interface\\Buttons\\WHITE8x8",
-    edgeFile = "Interface\\Buttons\\WHITE8x8",
-    edgeSize = 1,
-  })
-  f:SetBackdropColor(unpack(bg))
-  f:SetBackdropBorderColor(unpack(border))
+local function ApplyBackdrop(f, bg, border, radius, edgeSize)
+  GG.Widgets.Backdrop(f, bg, border, radius, edgeSize)
 end
 
 local function CreateLabel(parent, size, color, bold)
@@ -58,7 +52,7 @@ local function DrawSlotIcon(parent, x, y, slot, tierLabel)
   local card = CreateFrame(hasItem and "Button" or "Frame", nil, parent, "BackdropTemplate")
   card:SetSize(ICON_SIZE, ICON_SIZE)
   card:SetPoint("TOPLEFT", x, -y)
-  ApplyBackdrop(card, GG.Theme.background, hasItem and GG.Theme.ready or GG.Theme.border)
+  ApplyBackdrop(card, GG.Theme.background, hasItem and GG.Theme.ready or GG.Theme.border, 4)
 
   local iconFileID
   if hasItem then
@@ -164,14 +158,13 @@ function GG.VaultGrid:DrawClaim(parent, claim, width, height, hideKicker)
   local glow = parent:CreateTexture(nil, "BACKGROUND")
   glow:SetSize(CLAIM_ICON_SIZE + 10, CLAIM_ICON_SIZE + 10)
   glow:SetPoint("TOP", kicker, "BOTTOM", 0, -3)
-  glow:SetColorTexture(success[1], success[2], success[3], 0.14)
+  glow:SetColorTexture(0, 0, 0, 0)
+  GG.Widgets.RoundedFill(parent, glow, 9, "BACKGROUND"):SetColor(success[1], success[2], success[3], 0.14)
 
   local iconFrame = CreateFrame("Button", nil, parent, "BackdropTemplate")
   iconFrame:SetSize(CLAIM_ICON_SIZE, CLAIM_ICON_SIZE)
   iconFrame:SetPoint("CENTER", glow, "CENTER", 0, 0)
-  iconFrame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 2 })
-  iconFrame:SetBackdropColor(unpack(GG.Theme.background))
-  iconFrame:SetBackdropBorderColor(unpack(success))
+  ApplyBackdrop(iconFrame, GG.Theme.background, success, 5, 2)
 
   local icon = iconFrame:CreateTexture(nil, "ARTWORK")
   icon:SetPoint("TOPLEFT", 3, -3)

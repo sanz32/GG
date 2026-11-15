@@ -50,6 +50,7 @@ local DEFAULTS = {
   maxVisibleCharacters = 10,
   lockWindow = false,
   closeWithEsc = true,
+  windowAnimations = true,
   openOn = "characters",
   accentMode = "default",
   accentColor = { 0.545, 0.361, 0.965 },
@@ -67,6 +68,9 @@ local DEFAULTS = {
   popupRosterCall = true,
   rosterCallStyle = "band",
   rosterCallSound = true,
+  rosterCallPill = true,
+  rosterAutoInvite = true,
+  rosterAutoAccept = true,
   popupRosterCharacter = true,
   popupLockoutGroup = true,
   popupLockoutInstance = true,
@@ -111,6 +115,7 @@ function GG:ResetOptionsSection(category)
     o.maxVisibleCharacters = DEFAULTS.maxVisibleCharacters
     o.lockWindow = DEFAULTS.lockWindow
     o.closeWithEsc = DEFAULTS.closeWithEsc
+    o.windowAnimations = DEFAULTS.windowAnimations
     o.openOn = DEFAULTS.openOn
     o.accentMode = DEFAULTS.accentMode
   elseif category == "announcements" then
@@ -122,6 +127,9 @@ function GG:ResetOptionsSection(category)
     o.popupRosterCall = DEFAULTS.popupRosterCall
     o.rosterCallStyle = DEFAULTS.rosterCallStyle
     o.rosterCallSound = DEFAULTS.rosterCallSound
+    o.rosterCallPill = DEFAULTS.rosterCallPill
+    o.rosterAutoInvite = DEFAULTS.rosterAutoInvite
+    o.rosterAutoAccept = DEFAULTS.rosterAutoAccept
     o.rosterCallPos = nil
     o.popupRosterCharacter = DEFAULTS.popupRosterCharacter
     o.popupLockoutGroup = DEFAULTS.popupLockoutGroup

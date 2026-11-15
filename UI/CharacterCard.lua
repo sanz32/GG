@@ -60,14 +60,8 @@ local DIFFICULTY_ORDER = { 17, 14, 15, 16 }
 
 local RAID_BOSS_ICON_TEXTURE = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8"
 
-local function ApplyBackdrop(f, bg, border, edgeSize)
-  f:SetBackdrop({
-    bgFile = "Interface\\Buttons\\WHITE8x8",
-    edgeFile = "Interface\\Buttons\\WHITE8x8",
-    edgeSize = edgeSize or 1,
-  })
-  f:SetBackdropColor(unpack(bg))
-  if border then f:SetBackdropBorderColor(unpack(border)) end
+local function ApplyBackdrop(f, bg, border, edgeSize, radius)
+  GG.Widgets.Backdrop(f, bg, border or { 1, 1, 1, 1 }, radius, edgeSize)
 end
 
 local function CreateLabel(parent, size, color, bold)
@@ -131,7 +125,7 @@ local function DrawGearIcon(parent, x, y, slotId, itemLink)
     local qc = ITEM_QUALITY_COLORS[itemQuality or 1]
     if qc then borderColor = { qc.r, qc.g, qc.b, 1 } end
   end
-  ApplyBackdrop(frame, Theme.background, borderColor or Theme.borderSoft)
+  ApplyBackdrop(frame, Theme.background, borderColor or Theme.borderSoft, 1, 4)
 
   local icon = frame:CreateTexture(nil, "ARTWORK")
   icon:SetPoint("TOPLEFT", 2, -2)
@@ -359,14 +353,11 @@ local function BuildPopup()
   popup:SetScript("OnDragStart", popup.StartMoving)
   popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
   popup:SetClampedToScreen(true)
-  GG.Widgets.ApplyPanel(popup, { bg = Theme.background, corners = "all" })
+  GG.Widgets.ApplyPopup(popup)
   tinsert(UISpecialFrames, "GGCharacterCard")
 
-  local accentBar = popup:CreateTexture(nil, "ARTWORK")
-  accentBar:SetColorTexture(unpack(Theme.accent))
-  accentBar:SetPoint("TOPLEFT")
-  accentBar:SetPoint("TOPRIGHT")
-  accentBar:SetHeight(2)
+  popup.accentBar = GG.Widgets.TopAccent(popup)
+  popup:HookScript("OnShow", function() popup.accentBar:Paint() end)
 
   popup.nameText = CreateLabel(popup, 16, Theme.textPrimary, true)
   popup.nameText:SetPoint("TOPLEFT", PADDING, -14)

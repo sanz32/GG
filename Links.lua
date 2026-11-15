@@ -47,6 +47,7 @@ local FILTERED_EVENTS = {
 }
 
 local function RewriteMarkers(_, event, msg, ...)
+  if issecretvalue and issecretvalue(msg) then return false end
   if not msg or not msg:find("[GG:", 1, true) then return false end
 
   local channelHint = EVENT_TO_CHANNEL_HINT[event] or "WHISPER"

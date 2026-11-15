@@ -3,6 +3,8 @@ local ADDON_NAME, GG = ...
 GG.Season = {
   SEASON_ID = 18,
 
+  CRAFTED_MAX_ILVL = 331,
+
   SEASON_CURRENCY_IDS = {
     3442, 3443, 3444, 3445, 3446,
     3465,
@@ -20,6 +22,13 @@ GG.Season = {
     { labelKey = "ROSTER_ROW_CRESTS", 3442, 3443, 3444, 3445, 3446 },
     { labelKey = "ROSTER_ROW_SEASON", 3509, 274476, 3465, 3418, 280562 },
     { labelKey = "ROSTER_ROW_DELVES", 3310, 3028, 3356, "bounty" },
+  },
+
+  ACCOUNT_CARD_MONEY = {
+    { kind = "currency", id = 3445 },
+    { kind = "currency", id = 3446 },
+    { kind = "currency", id = 3418 },
+    { kind = "item", id = 280562 },
   },
 
   RAIDS = {

@@ -159,6 +159,19 @@ function RG.InviteCallFor(rosters, groups, characterKey)
   return pick
 end
 
+function RG.JoinedRosters(rosters, groups, characterKey)
+  local me = NameKey(characterKey)
+  local out = {}
+  if not me then return out end
+  for _, roster in ipairs(rosters or {}) do
+    if RG.InRoster(roster.members, characterKey) then
+      local best = RG.BestGroupFor(roster.members, groups)
+      if best and best.group.keys[me] and not best.group.simulated then out[#out + 1] = roster end
+    end
+  end
+  return out
+end
+
 function RG.WrongCharacter(group, rosters, myChars, currentKey)
   if not group then return nil end
   local best, bestCount
@@ -195,6 +208,38 @@ function RG.MatchesAnyRoster(group, set)
     if RG.BestGroupFor(roster.members, { group }) then return true end
   end
   return false
+end
+
+function RG.IsInviter(f)
+  if f.enabled == false then return false, "opción apagada" end
+  if not f.home then return false, "sin grupo propio" end
+  if not f.matches then return false, "no es el grupo de un roster" end
+  if f.leader then return true end
+  if f.raid and (f.assistant or f.everyoneAssistant) then return true end
+  return false, "sin permiso para invitar"
+end
+
+function RG.InvitersFrom(reports, group, now)
+  local list, atByKey = {}, {}
+  if not group or not group.leaderKey or not group.keys then return {}, atByKey end
+  for key, r in pairs(reports) do
+    if r.inv and type(r.sender) == "string" and r.leaderKey == group.leaderKey and now - r.at <= RG.REPORT_TTL
+      and group.keys[key] and not (group.offline and group.offline[key]) then
+      list[#list + 1] = { name = r.sender, key = key, at = r.at }
+    end
+  end
+  table.sort(list, function(a, b)
+    local al, bl = a.key == group.leaderKey, b.key == group.leaderKey
+    if al ~= bl then return al end
+    if a.at ~= b.at then return a.at > b.at end
+    return a.key < b.key
+  end)
+  local names = {}
+  for i, e in ipairs(list) do
+    names[i] = e.name
+    atByKey[e.key] = e.at
+  end
+  return names, atByKey
 end
 
 local function IsOffline(unit)
@@ -261,6 +306,7 @@ end
 local reports = {}
 local own
 local lastSentHash, lastSentAt = nil, -math.huge
+local lastSentInv = false
 local pendingChange, pendingReply
 local lastRequestAt = -math.huge
 local lastWhisperAt = -math.huge
@@ -273,23 +319,50 @@ local function MayReport()
   return IsInGuild() and GG.RaidRosters:GetCurrentSet() ~= nil
 end
 
+local function Flag(v)
+  if issecretvalue and issecretvalue(v) then return false end
+  return v == true
+end
+
+function RG:InviterFacts(group, assumeMatch)
+  local home = LE_PARTY_CATEGORY_HOME
+  local options = GGDB and GGDB.options
+  return {
+    enabled = not (options and options.rosterAutoInvite == false),
+    home = (group ~= nil or assumeMatch == true) and IsInGroup(home) == true,
+    leader = Flag(UnitIsGroupLeader and UnitIsGroupLeader("player")),
+    assistant = Flag(UnitIsGroupAssistant and UnitIsGroupAssistant("player")),
+    everyoneAssistant = Flag(IsEveryoneAssistant and IsEveryoneAssistant()),
+    raid = IsInRaid(home) == true,
+    matches = group == nil and assumeMatch == true
+      or (group ~= nil and RG.MatchesAnyRoster(group, GG.RaidRosters:GetCurrentSet())),
+  }
+end
+
+function RG:CanInvite(group, assumeMatch)
+  return RG.IsInviter(self:InviterFacts(group, assumeMatch))
+end
+
+function RG:OwnGroup() return own end
+
 local function Changed()
   if GG.RaidRostersTab and GG.RaidRostersTab.RefreshIfShown then GG.RaidRostersTab:RefreshIfShown() end
   if GG.RaidRostersTab and GG.RaidRostersTab.RepaintTags then GG.RaidRostersTab:RepaintTags() end
   if GG.RosterCall then GG.RosterCall:Evaluate() end
 end
 
-local function AlreadyReported(group, since)
-  for _, r in pairs(reports) do
-    if r.at >= since and r.hash == group.hash then return true end
+function RG.AlreadyReported(reportList, group, since, inv, iAmLeader)
+  if inv and iAmLeader then return false end
+  for _, r in pairs(reportList) do
+    if r.at >= since and r.hash == group.hash and (not inv or r.inv) then return true end
   end
   return false
 end
 
-local function SendState(group)
+local function SendState(group, inv)
   if GG:SendRosterPayload({ kind = "grp_state", leader = group.leader, members = group.members, raid = group.raid,
-    off = group.off, peak = group.peak }, "ALERT") then
-    lastSentHash, lastSentAt = group.hash, Now()
+    off = group.off, peak = group.peak, inv = inv or nil }, "ALERT") then
+    lastSentHash, lastSentAt, lastSentInv = group.hash, Now(), inv
   end
 end
 
@@ -299,18 +372,20 @@ local function Report(since, force)
   Changed()
   if not own then
     if lastSentHash then
-      lastSentHash = nil
+      lastSentHash, lastSentInv = nil, false
       GG:SendRosterPayload({ kind = "grp_end" }, "ALERT")
     end
     return
   end
   if not MayReport() then return end
-  if not force and own.hash == lastSentHash then return end
-  if AlreadyReported(own, since) then
-    lastSentHash, lastSentAt = own.hash, Now()
+  local inv = RG:CanInvite(own) == true
+  if not force and own.hash == lastSentHash and inv == lastSentInv then return end
+  local iAmLeader = own.leaderKey == NameKey(GG:GetCharacterKey())
+  if RG.AlreadyReported(reports, own, since, inv, iAmLeader) then
+    lastSentHash, lastSentAt, lastSentInv = own.hash, Now(), inv
     return
   end
-  SendState(own)
+  SendState(own, inv)
 end
 
 local READ_RETRIES, READ_RETRY_SECONDS = 5, 1
@@ -350,6 +425,18 @@ function RG:OnGroupEvent(event)
       end)
     end
   end
+  if GG.RaidInvites then GG.RaidInvites:OnGroupChanged(event) end
+  if pendingChange then return end
+  local since = Now()
+  pendingChange = true
+  C_Timer.After(CHANGE_DELAY + math.random() * CHANGE_SPREAD, function()
+    pendingChange = nil
+    Report(since, false)
+  end)
+end
+
+function RG:OnInviteOptionChanged()
+  if GG.RaidInvites then GG.RaidInvites:OnGroupChanged("OPTION") end
   if pendingChange then return end
   local since = Now()
   pendingChange = true
@@ -367,7 +454,8 @@ function RG:Heartbeat()
   if pruned then Changed() end
   if not own and not lastSentHash then return end
   C_Timer.After(math.random() * HEARTBEAT_SPREAD, function()
-    if Now() - lastSentAt < HEARTBEAT_SECONDS - 10 and own and own.hash == lastSentHash then return end
+    if Now() - lastSentAt < HEARTBEAT_SECONDS - 10 and own and own.hash == lastSentHash
+      and (RG:CanInvite(own) == true) == lastSentInv then return end
     Report(Now() - (HEARTBEAT_SECONDS - 10), true)
   end)
 end
@@ -388,6 +476,7 @@ function RG:OnMessage(payload, sender)
     local g = self.Sanitize(payload)
     if not g or not g.keys[senderKey] then return end
     g.at = Now()
+    g.sender, g.inv = sender, payload.inv == true
     for _, r in pairs(reports) do
       if r.leaderKey == g.leaderKey and r.peak > g.peak then g.peak = r.peak end
     end
@@ -433,13 +522,35 @@ function RG:IsInside(group)
   return me ~= nil and group.keys[me] == true
 end
 
+function RG:InvitersFor(group)
+  if not group or not group.leaderKey then return {}, {} end
+  if group.simulated then
+    if not group.simInv then return {}, {} end
+    return { group.leader }, { [group.leaderKey] = group.simAt or -math.huge }
+  end
+  local current = group
+  for _, g in ipairs(self:Groups()) do
+    if g.leaderKey == group.leaderKey then current = g break end
+  end
+  return RG.InvitersFrom(reports, current, Now())
+end
+
 function RG:RequestInvite(group)
   if GetTime() - lastWhisperAt < WHISPER_COOLDOWN then return false end
+  local RI = GG.RaidInvites
+  local path, inviter = "whisper", nil
+  if RI then path, inviter = RI:PlanFor(group) end
+  if path == "gg" then
+    lastWhisperAt = GetTime()
+    RI:SendRequest(group, inviter)
+    return "gg"
+  end
   if GG.IsChatRestricted and GG:IsChatRestricted() then return false end
   lastWhisperAt = GetTime()
+  if RI then RI:WatchWhisper(group) end
   local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
   send(self.INVITE_WORD, "WHISPER", nil, group.leader)
-  return true
+  return "whisper"
 end
 
 function RG:SimulateForming(roster, leader)
@@ -455,14 +566,25 @@ function RG:SimulateForming(roster, leader)
     if not g then return false end
     g.at = math.huge
     g.simulated = true
+    g.simInv = false
+    g.simAt = Now()
     reports.__test = g
+    if GG.RaidInvites then GG.RaidInvites:ProbeTest(leader) end
   end
   Changed()
   return true
 end
 
+function RG:SetSimulatedInvite(senderKey, ok)
+  local g = reports.__test
+  if not g or g.leaderKey ~= senderKey then return false end
+  g.simInv, g.simAt = ok, Now()
+  Changed()
+  return true
+end
+
 function RG:_Reset()
-  reports, own, lastSentHash, lastSentAt = {}, nil, nil, -math.huge
+  reports, own, lastSentHash, lastSentAt, lastSentInv = {}, nil, nil, -math.huge, false
   ownPeak = 0
   pendingChange, pendingReply, lastRequestAt, lastWhisperAt = nil, nil, -math.huge, -math.huge
   readRetries, readRetryPending = 0, false

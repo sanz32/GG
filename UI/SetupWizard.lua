@@ -334,7 +334,7 @@ local function BuildSummary(container, width)
 
   local rows = {
     { "WIZ_SUM_LAYOUT", L["WIZ_SUM_LAYOUT_FMT"]:format(
-      o.layoutMode == "vertical" and L["OPT_LAYOUT_COLUMNS"] or L["OPT_LAYOUT_ROWS"], shown,
+      (o.layoutMode == "accounts" and L["LAYOUT_ACCOUNTS"]) or (o.layoutMode == "vertical" and L["OPT_LAYOUT_COLUMNS"]) or L["OPT_LAYOUT_ROWS"], shown,
       math.floor((o.windowScale or 1) * 100 + 0.5)) },
     { "WIZ_SUM_COLOR", colorText },
     { "WIZ_SUM_ACCOUNTS", L["WIZ_SUM_ACCOUNT_FMT"]:format(
@@ -438,7 +438,7 @@ local function Build()
   frame:RegisterForDrag("LeftButton")
   frame:SetScript("OnDragStart", frame.StartMoving)
   frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
-  GG.Widgets.ApplyPanel(frame, { bg = Theme.background, corners = "all", glow = true })
+  GG.Widgets.ApplyPopup(frame)
   local solid = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
   solid:SetPoint("TOPLEFT", 3, -3)
   solid:SetPoint("BOTTOMRIGHT", -3, 3)

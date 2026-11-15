@@ -10,17 +10,24 @@ local Theme
 CONST.ROW_HEIGHT = 72
 CONST.ROW_HEIGHT_BASE = 72
 CONST.ROW_HEIGHT_TAGGED = 88
+CONST.ILVL_COLOR = { 0.64, 0.21, 0.93, 1 }
 CONST.ROW_GAP = 6
 CONST.LIST_CARD_LEFT = 8
 CONST.LIST_CARD_RIGHT = 8
 CONST.LIST_ACCOUNT_INSET = CONST.LIST_CARD_LEFT + 4
 CONST.CHARACTER_COL_MIN = 60
 CONST.CHARACTER_COL_MAX = 260
-CONST.TITLEBAR_HEIGHT = 28
-CONST.RAIL_HEIGHT = 36
-CONST.NAV_TAB_HEIGHT = 30
-CONST.CTX_HEIGHT = 34
+CONST.TITLEBAR_HEIGHT = 0
+CONST.RAIL_HEIGHT = 42
+CONST.NAV_TAB_HEIGHT = 32
+CONST.NAV_TABS_LEFT = 42
+CONST.CTX_HEIGHT = 40
+CONST.CTX_INSET = 10
 CONST.NAV_BG = { 0.063, 0.071, 0.090, 1 }
+CONST.TEST_CLASSES = {
+  "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "DEATHKNIGHT", "SHAMAN",
+  "MAGE", "WARLOCK", "MONK", "DRUID", "DEMONHUNTER", "EVOKER",
+}
 CONST.MIN_WINDOW_WIDTH = 1000
 CONST.RAID_WINDOW_WIDTH = 1100
 CONST.ROSTERS_WINDOW_HEIGHT = 600
@@ -29,7 +36,7 @@ CONST.MIN_WINDOW_HEIGHT = 520
 CONST.MIN_CHARACTER_SLOTS = 4
 CONST.COMPACT_BAR_WIDTH = 900
 CONST.HEADER_HEIGHT = 40
-CONST.FOOTER_HEIGHT = 24
+CONST.FOOTER_HEIGHT = 10
 CONST.SCROLLBAR_WIDTH = 16
 CONST.AVATAR_SIZE = 28
 CONST.AVATAR_GAP = 9
@@ -63,8 +70,8 @@ CONST.QUEST_DOT_ON = { 0.25, 1, 0.4, 1 }
 CONST.DELVES_CHECK_SIZE = 7
 CONST.DELVES_CHECK_OFFSET = -3
 
-CONST.VAULT_CARD_HEADER_HEIGHT = 66
-CONST.VAULT_CARD_PADDING = 12
+CONST.VAULT_CARD_HEADER_HEIGHT = 58
+CONST.VAULT_CARD_PADDING = 10
 CONST.VAULT_CARD_WIDTH = GG.VaultGrid.CONTENT_WIDTH + CONST.VAULT_CARD_PADDING * 2
 CONST.VAULT_CARD_HEIGHT = CONST.VAULT_CARD_HEADER_HEIGHT + GG.VaultGrid.CONTENT_HEIGHT + CONST.VAULT_CARD_PADDING * 2
 CONST.VAULT_CARD_GAP = 12
@@ -74,8 +81,8 @@ CONST.VAULT_CARD_POOL_SIZE = 30
 CONST.COLUMNS = {
   { key = "account",    labelKey = "ROSTER_COL_ACCOUNT",    optionKey = "account" },
   { key = "character",  labelKey = "ROSTER_COL_CHARACTER",  width = 170, sortable = true },
-  { key = "ilvl",       labelKey = "ROSTER_COL_ILVL",       width = 78,  sortable = true, optionKey = "ilvl" },
-  { key = "rating",     labelKey = "ROSTER_COL_RATING",     width = 70,  sortable = true, optionKey = "rating" },
+  { key = "ilvl",       labelKey = "ROSTER_COL_ILVL",       width = 88,  sortable = true, optionKey = "ilvl" },
+  { key = "rating",     labelKey = "ROSTER_COL_RATING",     width = 76,  sortable = true, optionKey = "rating" },
   { key = "keystone",   labelKey = "ROSTER_COL_KEYSTONE",   width = 112, optionKey = "keystone" },
   { key = "vault",      labelKey = "ROSTER_COL_VAULT",      width = 130, optionKey = "vault" },
   { key = "raid",       labelKey = "ROSTER_COL_RAID",       width = 196, optionKey = "raids" },
@@ -199,14 +206,8 @@ local function IsRaidDifficultyVisible(difficultyID)
   return not (prefs and prefs[difficultyID] == false)
 end
 
-local function ApplyBackdrop(f, bg, border, edgeSize)
-  f:SetBackdrop({
-    bgFile = "Interface\\Buttons\\WHITE8x8",
-    edgeFile = "Interface\\Buttons\\WHITE8x8",
-    edgeSize = edgeSize or 1,
-  })
-  f:SetBackdropColor(unpack(bg))
-  if border then f:SetBackdropBorderColor(unpack(border)) end
+local function ApplyBackdrop(f, bg, border, edgeSize, radius)
+  GG.Widgets.Backdrop(f, bg, border or { 1, 1, 1, 1 }, radius, edgeSize)
 end
 
 local function CreateLabel(parent, size, color, bold)
@@ -232,6 +233,7 @@ local function CreateDimOverlay(parent)
   local tex = overlay:CreateTexture(nil, "OVERLAY")
   tex:SetAllPoints()
   tex:SetColorTexture(0, 0, 0, 0.72)
+  overlay.veil = tex
   overlay:Hide()
   table.insert(dimOverlays, overlay)
   return overlay
@@ -282,40 +284,55 @@ local function GetAccountColumnWidth()
     measureFS = UIParent:CreateFontString(nil, "OVERLAY")
   end
 
-  measureFS:SetFont(Theme.font, 9.5, "")
-  measureFS:SetText(L["ROSTER_COL_ACCOUNT"])
-  local widest = measureFS:GetStringWidth()
+  local function Width(text, size)
+    local w
+    if GG.RosterUI.MeasureText then
+      w = GG.RosterUI.MeasureText(text, size)
+    else
+      measureFS:SetFont(Theme.font, size, "")
+      measureFS:SetText(text)
+      w = measureFS:GetStringWidth()
+    end
+    if not w or w <= 0 then w = GG.Layout.EstimateWidth(text, size) end
+    return w
+  end
+  local title = Width(L["ROSTER_COL_ACCOUNT"], 9.5)
 
   local style = GGDB.options.accountLabelStyle or "cuenta"
-  measureFS:SetFont(Theme.font, AccountTextFontSize(style), "")
+  local size = AccountTextFontSize(style)
+  local widest = 0
   if style == "battletag" then
-    for _, row in ipairs(GG.Roster:BuildRows()) do
-      measureFS:SetText(row.accountLabel or "")
-      widest = math.max(widest, measureFS:GetStringWidth())
+    for _, row in ipairs(GG.RosterUI.AllRows()) do
+      widest = math.max(widest, Width(row.accountLabel or "", size))
     end
   else
     for slot = 1, 9 do
-      measureFS:SetText(GG:FormatAccountLabel(slot, nil))
-      widest = math.max(widest, measureFS:GetStringWidth())
+      widest = math.max(widest, Width(GG:FormatAccountLabel(slot, nil), size))
+    end
+  end
+  widest = widest + 20
+
+  if GG.RosterUI.AccountClockText and GG.RosterUI.AllRows then
+    for _, row in ipairs(GG.RosterUI.AllRows()) do
+      local clock, age = GG.RosterUI.AccountClockText(row)
+      if clock then widest = math.max(widest, 14 + Width(age, 10)) end
     end
   end
 
-  return widest + CONST.CELL_PADDING * 2 + CONST.LIST_ACCOUNT_INSET
+  return math.max(title, widest) + CONST.CELL_PADDING * 2 + CONST.LIST_ACCOUNT_INSET
 end
 
 local function GetCharacterColumnWidth()
   if not (GGDB and GGDB.options and Theme) then return 170 end
   if not measureFS then measureFS = UIParent:CreateFontString(nil, "OVERLAY") end
   local function Measure(text, size)
-    measureFS:SetFont(Theme.font, size, "")
-    measureFS:SetText(text or "")
-    return measureFS:GetStringWidth()
+    return GG.RosterUI.MeasureText(text, size)
   end
-  local badge = Measure(L["ROSTER_TAG_MAIN"], 10) + 12 + 6
-  local nameClock = IsSectionVisible("avatar") and 0 or 14
+  local badge = IsSectionVisible("avatar") and 0 or 20
+  local nameClock = 0
   local showGuild = IsSectionVisible("guild")
   local widest = math.max(Measure(L["ROSTER_COL_CHARACTER"], 10), Measure(L["ROSTER_LEVEL_FORMAT"]:format(90), 10))
-  for _, row in ipairs(GG.Roster:BuildRows()) do
+  for _, row in ipairs(GG.RosterUI.AllRows()) do
     widest = math.max(widest,
       Measure(row.name, 15) + (row.isMain and badge or 0) + (GG.Roster:ClockState(row.freshness) and nameClock or 0),
       Measure(row.realm, 10))
@@ -481,27 +498,11 @@ local tabDefs = {
 local function CreateNavTab(parent, text, icon)
   local btn = CreateFrame("Button", nil, parent)
   btn:SetHeight(CONST.NAV_TAB_HEIGHT)
-  btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-  btn.bg:SetAllPoints()
-  btn.bg:SetColorTexture(unpack(Theme.panel))
-  btn.hoverBg = btn:CreateTexture(nil, "BACKGROUND")
-  btn.hoverBg:SetAllPoints()
-  btn.hoverBg:SetColorTexture(1, 1, 1, 0.04)
-  btn.topBar = btn:CreateTexture(nil, "ARTWORK")
-  btn.topBar:SetPoint("TOPLEFT")
-  btn.topBar:SetPoint("TOPRIGHT")
-  btn.topBar:SetHeight(3)
-  btn.topBar:SetColorTexture(unpack(Theme.accent))
-  btn.leftLine = btn:CreateTexture(nil, "ARTWORK")
-  btn.leftLine:SetPoint("TOPLEFT")
-  btn.leftLine:SetPoint("BOTTOMLEFT")
-  btn.leftLine:SetWidth(1)
-  btn.leftLine:SetColorTexture(unpack(Theme.border))
-  btn.rightLine = btn:CreateTexture(nil, "ARTWORK")
-  btn.rightLine:SetPoint("TOPRIGHT")
-  btn.rightLine:SetPoint("BOTTOMRIGHT")
-  btn.rightLine:SetWidth(1)
-  btn.rightLine:SetColorTexture(unpack(Theme.border))
+  btn.hoverBox = CreateFrame("Frame", nil, btn)
+  btn.hoverBox:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, -3)
+  btn.hoverBox:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 3)
+  btn.hoverBg = GG.Widgets.RoundedFill(btn, btn.hoverBox, 7, "BACKGROUND")
+  btn.hoverBg:SetColor(1, 1, 1, 0.04)
 
   icon = icon or {}
   btn.icon = btn:CreateTexture(nil, "ARTWORK")
@@ -520,15 +521,14 @@ local function CreateNavTab(parent, text, icon)
   end
   btn.tint = icon.tint
 
-  btn.label = CreateLabel(btn, 12.5, Theme.textMuted, true)
+  btn.label = CreateLabel(btn, 14, Theme.textMuted, true)
   btn.label:SetPoint("LEFT", btn.icon, "RIGHT", 7, 0)
   btn.label:SetText(text)
 
   btn.badge = CreateFrame("Frame", nil, btn)
   btn.badge:SetHeight(16)
   btn.badge:SetPoint("LEFT", btn.label, "RIGHT", 7, 0)
-  btn.badge.bg = btn.badge:CreateTexture(nil, "BACKGROUND")
-  btn.badge.bg:SetAllPoints()
+  btn.badge.bg = GG.Widgets.RoundedFill(btn.badge, btn.badge, 8, "BACKGROUND")
   btn.badge.text = CreateLabel(btn.badge, 10, Theme.textPrimary, true)
   btn.badge.text:SetPoint("CENTER", 0, 0)
   btn.badge:Hide()
@@ -555,7 +555,7 @@ local function CreateNavTab(parent, text, icon)
     elseif style == "green" then
       fg, bg = Theme.success, { Theme.success[1], Theme.success[2], Theme.success[3], 0.18 }
     end
-    self.badge.bg:SetColorTexture(unpack(bg))
+    self.badge.bg:SetColor(bg)
     self.badge.text:SetTextColor(unpack(fg))
     self.badge.text:SetText(value)
     self.badge:Show()
@@ -564,10 +564,6 @@ local function CreateNavTab(parent, text, icon)
 
   function btn:Paint(active)
     self.active = active
-    self.bg:SetShown(active)
-    self.topBar:SetShown(active)
-    self.leftLine:SetShown(active)
-    self.rightLine:SetShown(active)
     self.hoverBg:SetShown(not active and self:IsMouseOver())
     self.label:SetTextColor(unpack(active and { 1, 1, 1, 1 } or Theme.textMuted))
     self.icon:SetAlpha(active and 1 or 0.6)
@@ -589,8 +585,9 @@ local function CreateNavTab(parent, text, icon)
 end
 
 local function CreateSegment(parent, onPick)
-  local seg = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-  ApplyBackdrop(seg, CONST.NAV_BG, Theme.border, 1)
+  local seg = CreateFrame("Frame", nil, parent)
+  seg.fill = GG.Widgets.RoundedFill(seg, seg, 7, "BACKGROUND")
+  seg.fill:SetColor(0.047, 0.051, 0.067, 1)
   seg:SetHeight(24)
   seg.buttons = {}
   seg.options = {}
@@ -603,17 +600,17 @@ local function CreateSegment(parent, onPick)
       if not b then
         b = CreateFrame("Button", nil, self)
         b:SetHeight(20)
-        b.bg = b:CreateTexture(nil, "BACKGROUND")
-        b.bg:SetAllPoints()
+        b.bg = GG.Widgets.RoundedFill(b, b, 5, "BACKGROUND")
+        b.bg:SetColor(0, 0, 0, 0)
         b.icon = b:CreateTexture(nil, "ARTWORK")
         b.icon:SetSize(12, 12)
         b.label = CreateLabel(b, 11.5, Theme.textMuted, true)
         b:SetScript("OnClick", function(clicked) if onPick then onPick(clicked.key) end end)
         b:SetScript("OnEnter", function(hovered)
-          if not hovered.active then hovered.bg:SetColorTexture(1, 1, 1, 0.06) end
+          if not hovered.active then hovered.bg:SetColor(1, 1, 1, 0.06) end
         end)
         b:SetScript("OnLeave", function(hovered)
-          if not hovered.active then hovered.bg:SetColorTexture(0, 0, 0, 0) end
+          if not hovered.active then hovered.bg:SetColor(0, 0, 0, 0) end
         end)
         self.buttons[i] = b
       end
@@ -652,7 +649,7 @@ local function CreateSegment(parent, onPick)
       local b = self.buttons[i]
       local active = b.key == activeKey
       b.active = active
-      b.bg:SetColorTexture(unpack(active and Theme.accent or { 0, 0, 0, 0 }))
+      b.bg:SetColor(active and Theme.accent or { 0, 0, 0, 0 })
       b.label:SetTextColor(unpack(active and Theme.onAccent or Theme.textMuted))
       b.icon:SetVertexColor(unpack(active and Theme.onAccent or { 0.55, 0.52, 0.63, 1 }))
     end
@@ -704,10 +701,75 @@ local function UpdateFooter()
   state.footerHint:SetText(hint)
 end
 
+function state.LayoutKey()
+  local mode = GGDB and GGDB.options and GGDB.options.layoutMode
+  if mode == "vertical" then return "cols" end
+  if mode == "accounts" then return "accounts" end
+  return "rows"
+end
+
+function state.IsAccounts()
+  return state.LayoutKey() == "accounts"
+end
+
+function state.LayoutOptions(compact)
+  return {
+    { key = "rows", label = compact and "" or L["LAYOUT_ROWS"], icon = "Interface\\AddOns\\GG\\Media\\ViewHorizontal64.tga" },
+    { key = "cols", label = compact and "" or L["LAYOUT_COLUMNS"], icon = "Interface\\AddOns\\GG\\Media\\ViewVertical64.tga" },
+    { key = "accounts", label = compact and "" or L["LAYOUT_ACCOUNTS"], icon = "Interface\\AddOns\\GG\\Media\\ViewAccounts64.tga" },
+  }
+end
+
+function state.AnimationsOn()
+  return not (GGDB and GGDB.options and GGDB.options.windowAnimations == false)
+end
+
+function state.PlaceTabSlider(animate)
+  local slider = state.tabSlider
+  if not slider then return end
+  local btn = not settingsOpen and tabButtons[state.filterTab]
+  if not (btn and btn:IsShown() and btn.navX) then
+    slider:Hide()
+    slider.x = nil
+    return
+  end
+  local toX, toW = btn.navX, math.max(10, btn:GetWidth())
+  local y = -(CONST.RAIL_HEIGHT - CONST.NAV_TAB_HEIGHT) / 2 - 3
+  local function Put(x, w)
+    slider:ClearAllPoints()
+    slider:SetPoint("TOPLEFT", state.rail, "TOPLEFT", x, y)
+    slider:SetWidth(w)
+    slider.x, slider.w = x, w
+  end
+  slider:Show()
+  if slider.animating then
+    slider.toX, slider.toW = toX, toW
+    return
+  end
+  if not (animate and slider.x and state.AnimationsOn()) or (slider.x == toX and slider.w == toW) then
+    Put(toX, toW)
+    return
+  end
+  slider.fromX, slider.fromW, slider.toX, slider.toW = slider.x, slider.w, toX, toW
+  slider.elapsed, slider.animating = 0, true
+  slider:SetScript("OnUpdate", function(self, dt)
+    self.elapsed = self.elapsed + dt
+    local L = GG.Layout
+    local x, done = L.Tween(self.fromX, self.toX, self.elapsed, L.SLIDER_DURATION, L.EaseOutCubic)
+    local w = L.Tween(self.fromW, self.toW, self.elapsed, L.SLIDER_DURATION, L.EaseOutCubic)
+    Put(x, w)
+    if done then
+      self.animating = false
+      self:SetScript("OnUpdate", nil)
+    end
+  end)
+end
+
 local function PaintNavTabs()
   local activeKey = settingsOpen and "__settings" or state.filterTab
   for key, btn in pairs(tabButtons) do btn:Paint(key == activeKey) end
-  if state.settingsTab then state.settingsTab:Paint(settingsOpen == true) end
+  if state.settingsTab then state.settingsTab:SetActive(settingsOpen == true) end
+  state.PlaceTabSlider(true)
 end
 
 local function UpdateNavBadges(rows)
@@ -737,10 +799,13 @@ local function UpdateContextBar()
   local show = not settingsOpen and (tab == "all" or tab == "vaultPending")
   ctx:SetHeight(show and CONST.CTX_HEIGHT or 0.001)
   ctx:SetShown(show)
-  if UpdateSortHalo then UpdateSortHalo() end
-  if not show then return end
+  if not show then
+    if UpdateSortHalo then UpdateSortHalo() end
+    return
+  end
   local isCharacters = tab == "all"
   if customOrderBtn then customOrderBtn:SetShown(isCharacters) end
+  if state.accountsSortDD then state.accountsSortDD:SetShown(isCharacters and state.IsAccounts()) end
   if charactersBtn then charactersBtn:SetShown(isCharacters) end
   if state.layoutSeg then state.layoutSeg:SetShown(isCharacters) end
   ctx.resetText:SetShown(not isCharacters)
@@ -749,11 +814,12 @@ local function UpdateContextBar()
     local days, hours, minutes = math.floor(seconds / 86400), math.floor(seconds % 86400 / 3600), math.floor(seconds % 3600 / 60)
     ctx.resetText:SetText(L["VAULT_RESETS_IN"]:format(days > 0 and ("%dd %dh"):format(days, hours) or ("%dh %dm"):format(hours, minutes)))
   end
+  if UpdateSortHalo then UpdateSortHalo() end
 end
 
 local function LayoutActionRail()
   local prev
-  local navWidth = 10
+  local navWidth = CONST.NAV_TABS_LEFT
   for _, def in ipairs(tabDefs) do
     local btn = tabButtons[def.key]
     if not btn then return end
@@ -762,25 +828,33 @@ local function LayoutActionRail()
     btn:SetShown(visible)
     btn:ClearAllPoints()
     if prev then
-      btn:SetPoint("BOTTOMLEFT", prev, "BOTTOMRIGHT", 2, 0)
+      btn:SetPoint("LEFT", prev, "RIGHT", 2, 0)
     else
-      btn:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", 10, -1)
+      btn:SetPoint("TOPLEFT", rail, "TOPLEFT", CONST.NAV_TABS_LEFT,
+        -(CONST.RAIL_HEIGHT - CONST.NAV_TAB_HEIGHT) / 2)
     end
     btn:Layout()
+    btn.navX = navWidth
     if visible then
       navWidth = navWidth + btn:GetWidth() + 2
       prev = btn
     end
   end
+  local tabRail = state.tabRail
+  if tabRail then
+    tabRail:ClearAllPoints()
+    tabRail:SetPoint("TOPLEFT", rail, "TOPLEFT", CONST.NAV_TABS_LEFT - 3,
+      -(CONST.RAIL_HEIGHT - CONST.NAV_TAB_HEIGHT) / 2)
+    tabRail:SetSize(navWidth - 2 - CONST.NAV_TABS_LEFT + 6, CONST.NAV_TAB_HEIGHT)
+    tabRail:Show()
+  end
+  if state.PlaceTabSlider then state.PlaceTabSlider(false) end
   local settingsTab = state.settingsTab
   if settingsTab then
-    settingsTab:ClearAllPoints()
-    settingsTab:SetPoint("BOTTOMRIGHT", rail, "BOTTOMRIGHT", -10, -1)
-    settingsTab:Layout()
     if syncLabel then
       syncLabel:ClearAllPoints()
-      syncLabel:SetPoint("RIGHT", settingsTab, "LEFT", -14, 0)
-      local room = rail:GetWidth() - navWidth - settingsTab:GetWidth() - 10 - 28
+      syncLabel:SetPoint("RIGHT", state.syncBtn or settingsTab, "LEFT", -10, 0)
+      local room = rail:GetWidth() - navWidth - 112 - 10 - 28
       syncLabel:SetShown(room >= 130 and not settingsOpen
         and state.filterTab ~= "raid" and state.filterTab ~= "bonusRoll" and state.filterTab ~= "rosters")
       for _, icon in ipairs(state.syncIcons or {}) do icon:SetShown(syncLabel:IsShown() and icon.used == true) end
@@ -793,12 +867,8 @@ local function LayoutActionRail()
   if compact ~= state.compactBar then
     state.compactBar = compact
     if state.layoutSeg then
-      state.layoutSeg:SetOptions({
-        { key = "rows", label = compact and "" or L["LAYOUT_ROWS"], icon = "Interface\\AddOns\\GG\\Media\\ViewHorizontal64.tga" },
-        { key = "cols", label = compact and "" or L["LAYOUT_COLUMNS"], icon = "Interface\\AddOns\\GG\\Media\\ViewVertical64.tga" },
-      })
-      local vertical = (GGDB and GGDB.options and GGDB.options.layoutMode) == "vertical"
-      state.layoutSeg:Paint(vertical and "cols" or "rows")
+      state.layoutSeg:SetOptions(state.LayoutOptions(compact))
+      state.layoutSeg:Paint(state.LayoutKey())
     end
     if countLabel then
       countLabel:SetText(compact and tostring(#dataRows) or L["ROSTER_COUNT"]:format(#dataRows))
@@ -822,23 +892,23 @@ local function LayoutActionRail()
     if left then
       searchBox:SetPoint("LEFT", left, "RIGHT", 14, 0)
     else
-      searchBox:SetPoint("LEFT", ctx, "LEFT", 12, 0)
+      searchBox:SetPoint("LEFT", ctx, "LEFT", 12 + CONST.CTX_INSET, 0)
     end
   end
   if charactersBtn then
     charactersBtn:ClearAllPoints()
-    charactersBtn:SetPoint("RIGHT", ctx, "RIGHT", -10, 0)
+    charactersBtn:SetPoint("RIGHT", ctx, "RIGHT", -10 - CONST.CTX_INSET, 0)
     if charactersBtn.Sync then charactersBtn:Sync() end
   end
   local isCharacters = state.filterTab == "all"
-  local leftEdge = 12
+  local leftEdge = 12 + CONST.CTX_INSET
   if left then leftEdge = leftEdge + ctx.accountLabel:GetStringWidth() + 8 + left:GetWidth() + 14 end
   if state.layoutSeg then state.layoutSeg:Layout() end
   local centered = false
   if customOrderBtn then
-    customOrderBtn:SetWidth(customOrderBtn.label:GetStringWidth() + 10 + 14 + 6 + 12)
+    customOrderBtn:SetWidth(customOrderBtn.label:GetStringWidth() + 10 + 14 + 6 + 12 + 18)
     local half = ctx:GetWidth() / 2 - customOrderBtn:GetWidth() / 2
-    local rightNeeded = 10 + (charactersBtn and charactersBtn:GetWidth() + 10 or 0)
+    local rightNeeded = 10 + CONST.CTX_INSET + (charactersBtn and charactersBtn:GetWidth() + 10 or 0)
       + (state.layoutSeg and state.layoutSeg:GetWidth() + 14 or 0)
     centered = ctx:GetWidth() > 0 and half >= leftEdge + 80 + 14 and half >= rightNeeded
     customOrderBtn:ClearAllPoints()
@@ -847,7 +917,7 @@ local function LayoutActionRail()
     elseif charactersBtn then
       customOrderBtn:SetPoint("RIGHT", charactersBtn, "LEFT", -10, 0)
     else
-      customOrderBtn:SetPoint("RIGHT", ctx, "RIGHT", -10, 0)
+      customOrderBtn:SetPoint("RIGHT", ctx, "RIGHT", -10 - CONST.CTX_INSET, 0)
     end
   end
   state.sortCentered = centered
@@ -856,7 +926,7 @@ local function LayoutActionRail()
     if isCharacters and centered then
       available = ctx:GetWidth() / 2 - customOrderBtn:GetWidth() / 2 - 14 - leftEdge
     else
-      local rightUsed = 10
+      local rightUsed = 10 + CONST.CTX_INSET
       if isCharacters then
         if charactersBtn then rightUsed = rightUsed + charactersBtn:GetWidth() + 10 end
         if customOrderBtn then rightUsed = rightUsed + customOrderBtn:GetWidth() + 10 end
@@ -875,7 +945,7 @@ local function LayoutActionRail()
     elseif charactersBtn then
       state.layoutSeg:SetPoint("RIGHT", charactersBtn, "LEFT", -10, 0)
     else
-      state.layoutSeg:SetPoint("RIGHT", ctx, "RIGHT", -10, 0)
+      state.layoutSeg:SetPoint("RIGHT", ctx, "RIGHT", -10 - CONST.CTX_INSET, 0)
     end
   end
   if UpdateSortHalo then UpdateSortHalo() end
@@ -1372,13 +1442,14 @@ V.CURRENCY_ROW_HEIGHT = 35
 V.CURRENCY_ROW_TOP = 3
 
 V.DATA_ROW_HEIGHT = 28
-V.HEAD_HEIGHT = 96
-V.HEAD_HEIGHT_NO_AVATAR = 60
+V.BIG_ROW_HEIGHT = 36
+V.HEAD_HEIGHT = 100
+V.HEAD_HEIGHT_NO_AVATAR = 64
 V.VAULT_HEIGHT = 64
 V.ILVL_GAUGE_WINDOW = 20
 V.QUESTS_HEIGHT = 42
-V.TITLE_SIZE = 14
-V.LABEL_SIZE = 12
+V.TITLE_SIZE = 12
+V.LABEL_SIZE = 13
 V.SMALL_SIZE = 10
 V.SIDE_X = 14
 
@@ -1388,7 +1459,12 @@ function V.Theme()
 end
 
 function V.ApplyTheme()
-  V.T = GG.RosterThemes:Resolve()
+  if V.themeOverride then
+    local o = GGDB and GGDB.options or {}
+    V.T = GG.RosterThemes:Resolve({ theme = V.themeOverride, themeParts = o.themeParts })
+  else
+    V.T = GG.RosterThemes:Resolve()
+  end
   local tok = V.T.tokens
   V.COL_WIDTH = tok.colWidth
   V.COL_GAP = tok.colGap or 0
@@ -1430,24 +1506,27 @@ function CurrencyGrid.PaintBountySlot(slot, entry)
   slot.icon:SetAlpha(classification.iconAlpha)
   slot.icon:Show()
   local ring = classification.ringColor
-  slot.capFrame:SetColorTexture(ring[1], ring[2], ring[3], ring[4] or 1)
+  slot.capFrame:SetVertexColor(ring[1], ring[2], ring[3], ring[4] or 1)
   slot.capFrame:Show()
 
   if not slot.bountyTick then
-    slot.bountyBacking = slot:CreateTexture(nil, "BORDER", nil, 1)
-    slot.bountyBacking:SetColorTexture(unpack(Theme.background))
+    slot.bountyBacking = GG.Widgets.NewRoundTexture(slot, "BORDER", 1)
+    GG.Widgets.ApplyRound(slot.bountyBacking, "RoundFill", 4)
+    slot.bountyBacking:SetVertexColor(unpack(Theme.background))
     slot.bountyBacking:SetSize(CurrencyGrid.ICON_SIZE, CurrencyGrid.ICON_SIZE)
     slot.bountyBacking:SetPoint("CENTER", slot.icon, "CENTER", 0, 0)
     slot.bountyTick = slot:CreateTexture(nil, "OVERLAY")
     slot.bountyTick:SetAtlas("common-icon-checkmark")
     slot.bountyTick:SetSize(12, 12)
     slot.bountyTick:SetPoint("TOP", slot.icon, "BOTTOM", 0, -1)
-    slot.bountyDotBg = slot:CreateTexture(nil, "OVERLAY")
-    slot.bountyDotBg:SetColorTexture(unpack(Theme.background))
+    slot.bountyDotBg = GG.Widgets.NewRoundTexture(slot, "OVERLAY")
+    GG.Widgets.ApplyRound(slot.bountyDotBg, "RoundFill", 3)
+    slot.bountyDotBg:SetVertexColor(unpack(Theme.background))
     slot.bountyDotBg:SetSize(7, 7)
     slot.bountyDotBg:SetPoint("TOPRIGHT", slot.icon, "TOPRIGHT", 3, 3)
-    slot.bountyDot = slot:CreateTexture(nil, "OVERLAY", nil, 1)
-    slot.bountyDot:SetColorTexture(unpack(Theme.ready))
+    slot.bountyDot = GG.Widgets.NewRoundTexture(slot, "OVERLAY", 1)
+    GG.Widgets.ApplyRound(slot.bountyDot, "RoundFill", 2)
+    slot.bountyDot:SetVertexColor(unpack(Theme.ready))
     slot.bountyDot:SetSize(5, 5)
     slot.bountyDot:SetPoint("CENTER", slot.bountyDotBg, "CENTER", 0, 0)
   end
@@ -1563,8 +1642,9 @@ V.ROSTER_ROW_HEIGHT = 24
 
 local VFONT = {}
 VFONT.account = 12
-VFONT.ilvl = 15
-VFONT.rating = 15
+VFONT.ilvl = 20
+VFONT.ilvlDec = 12
+VFONT.rating = 16
 VFONT.keyLevel = 12
 VFONT.keyDungeon = 12
 VFONT.noKey = 12
@@ -1573,7 +1653,8 @@ V.KEY_BADGE_HEIGHT = 20
 
 local HFONT = {}
 HFONT.account = 12
-HFONT.ilvl = 15
+HFONT.ilvl = 17
+HFONT.ilvlDec = 11
 HFONT.rating = 15
 HFONT.keyLevel = 12
 HFONT.keyDungeon = 12
@@ -1607,8 +1688,8 @@ local function BuildVerticalSections()
     { key = "band_overview", band = "ROSTER_GROUP_OVERVIEW", group = { "account", "ilvl", "rating", "keystone" },
       height = titleHeight, block = "overview" },
     { key = "account",   height = V.DATA_ROW_HEIGHT, label = L["ROSTER_COL_ACCOUNT"],  optionKey = "account",  zebra = true, dataRow = true },
-    { key = "ilvl",      height = V.DATA_ROW_HEIGHT, label = L["ROSTER_COL_ILVL"],     optionKey = "ilvl",     sortKey = "ilvl", zebra = true, dataRow = true },
-    { key = "rating",    height = V.DATA_ROW_HEIGHT, label = L["ROSTER_COL_RATING"],   optionKey = "rating",   sortKey = "rating", zebra = true, dataRow = true },
+    { key = "ilvl",      height = V.BIG_ROW_HEIGHT, label = L["ROSTER_COL_ILVL"],     optionKey = "ilvl",     sortKey = "ilvl", zebra = true, dataRow = true },
+    { key = "rating",    height = V.BIG_ROW_HEIGHT, label = L["ROSTER_COL_RATING"],   optionKey = "rating",   sortKey = "rating", zebra = true, dataRow = true },
     { key = "keystone",  height = V.DATA_ROW_HEIGHT, label = L["ROSTER_COL_KEYSTONE"], optionKey = "keystone", zebra = true, dataRow = true },
   }
 
@@ -1783,7 +1864,8 @@ local function CreateVaultGrid(row)
       local cell = CreateLabel(row.vaultCell, CONST.VAULT_SLOT_FONT_SIZE, Theme.textFaint, true)
       cell:SetJustifyH("CENTER")
       cell:SetWidth(CONST.VAULT_SLOT_WIDTH)
-      cell.bg = row.vaultCell:CreateTexture(nil, "BORDER")
+      cell.bg = GG.Widgets.NewRoundTexture(row.vaultCell, "BORDER")
+      GG.Widgets.ApplyRound(cell.bg, "RoundFill", 3)
       cell:SetPoint("TOPLEFT", row.vaultCell, "TOPLEFT", CONST.VAULT_DOT_GAP + (slotIndex - 1) * CONST.VAULT_SLOT_WIDTH, -(tierIndex - 1) * CONST.VAULT_ROW_HEIGHT)
       cells[tierIndex][slotIndex] = cell
     end
@@ -1824,18 +1906,24 @@ end
 local function CreateQuestIcon(row, onEnter)
   local slot = {}
 
-  slot.ring = row:CreateTexture(nil, "BORDER")
+  slot.ring = GG.Widgets.NewRoundTexture(row, "BORDER")
+  GG.Widgets.ApplyRound(slot.ring, "RoundFill", 7)
   slot.ring:SetSize(CONST.NEMESIS_ICON_SIZE + 4, CONST.NEMESIS_ICON_SIZE + 4)
-  slot.ring:SetColorTexture(unpack(Theme.borderSoft))
+  slot.ring:SetVertexColor(unpack(Theme.borderSoft))
 
-  slot.backing = row:CreateTexture(nil, "BORDER", nil, 1)
+  slot.backing = GG.Widgets.NewRoundTexture(row, "BORDER", 1)
+  GG.Widgets.ApplyRound(slot.backing, "RoundFill", 5)
   slot.backing:SetSize(CONST.NEMESIS_ICON_SIZE, CONST.NEMESIS_ICON_SIZE)
   slot.backing:SetPoint("CENTER", slot.ring, "CENTER", 0, 0)
-  slot.backing:SetColorTexture(unpack(Theme.background))
+  slot.backing:SetVertexColor(unpack(Theme.background))
 
   slot.icon = row:CreateTexture(nil, "ARTWORK")
   slot.icon:SetSize(CONST.NEMESIS_ICON_SIZE, CONST.NEMESIS_ICON_SIZE)
   slot.icon:SetPoint("CENTER", slot.ring, "CENTER", 0, 0)
+  slot.iconMask = row:CreateMaskTexture()
+  slot.iconMask:SetTexture(Theme.media.roundMask, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+  slot.iconMask:SetAllPoints(slot.icon)
+  slot.icon:AddMaskTexture(slot.iconMask)
 
   slot.badge = row:CreateFontString(nil, "OVERLAY")
   slot.badge:SetFont(Theme.fontBold, 9, "OUTLINE")
@@ -1949,6 +2037,13 @@ local QUEST_ICONS = {
   },
 }
 
+function V.RoundRosterTag(tag)
+  if not (tag and GG.Widgets.Backdrop) then return end
+  local clear = { 1, 1, 1, 0 }
+  GG.Widgets.Backdrop(tag, clear, clear, 5)
+  if tag.halo then GG.Widgets.Backdrop(tag.halo, nil, clear, 7, 2) end
+end
+
 local function CreateRow(parent)
   local row = CreateFrame("Button", nil, parent)
   row:SetHeight(CONST.ROW_HEIGHT)
@@ -1959,8 +2054,13 @@ local function CreateRow(parent)
 
   row.accountCellBg = row:CreateTexture(nil, "BACKGROUND", nil, 1)
   row.accountCellBg:Hide()
+  row.accountFill = GG.Widgets.RoundedFill(row, row.accountCellBg, 10, "BACKGROUND", 2)
+  row.accountFill:Hide()
 
   row.accountText = CreateLabel(row, 12, Theme.textPrimary)
+  row.accountAge = CreateLabel(row, 10, Theme.textFaint)
+  row.accountAge:SetJustifyH("CENTER")
+  row.accountAge:Hide()
 
   row.dragSourceFill = row:CreateTexture(nil, "BACKGROUND", nil, 1)
   row.dragSourceFill:SetAllPoints()
@@ -2036,16 +2136,52 @@ local function CreateRow(parent)
   row.equipmentHitbox:SetScript("OnLeave", function() GG.CharacterTooltip:Hide() end)
   row.mainRing = row:CreateTexture(nil, "BORDER")
   row.mainRing:SetSize(CONST.AVATAR_SIZE + 7, CONST.AVATAR_SIZE + 7)
-  row.mainRing:SetColorTexture(unpack(Theme.gold))
+  row.mainRing:SetColorTexture(0, 0, 0, 0)
   row.mainRing:Hide()
+  row.mainFill = GG.Widgets.RoundedFill(row, row.mainRing, 9, "BORDER")
+  row.mainFill:SetColor(Theme.gold)
+  row.mainFill:Hide()
+  row.mainGlow = row:CreateTexture(nil, "BACKGROUND", nil, 7)
+  row.mainGlow:SetTexture(Theme.media.glowHalo)
+  row.mainGlow:SetDesaturated(true)
+  row.mainGlow:SetBlendMode("ADD")
+  row.mainGlow:SetVertexColor(Theme.gold[1], Theme.gold[2], Theme.gold[3], 0.45)
+  row.mainGlow:SetPoint("TOPLEFT", row.mainRing, "TOPLEFT", -9, 9)
+  row.mainGlow:SetPoint("BOTTOMRIGHT", row.mainRing, "BOTTOMRIGHT", 9, -9)
+  row.mainGlow:Hide()
 
   row.avatarRing = row:CreateTexture(nil, "BORDER", nil, 1)
   row.avatarRing:SetSize(CONST.AVATAR_SIZE + 3, CONST.AVATAR_SIZE + 3)
-  row.avatarRing:SetColorTexture(unpack(Theme.borderSoft))
+  row.avatarRing:SetColorTexture(0, 0, 0, 0)
+  row.ringFill = GG.Widgets.RoundedFill(row, row.avatarRing, 7, "BORDER", 2)
+  row.ringFill:SetColor(Theme.borderSoft)
 
   row.avatar = row:CreateTexture(nil, "ARTWORK")
   row.avatar:SetSize(CONST.AVATAR_SIZE, CONST.AVATAR_SIZE)
   row.avatar:SetPoint("CENTER", row.avatarRing, "CENTER", 0, 0)
+  row.avatarMask = row:CreateMaskTexture()
+  row.avatarMask:SetTexture(Theme.media.roundMask, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+  row.avatarMask:SetAllPoints(row.avatar)
+  row.avatar:AddMaskTexture(row.avatarMask)
+
+  row.mainStar = CreateFrame("Frame", nil, row)
+  row.mainStar:SetSize(17, 17)
+  row.mainStar:SetFrameLevel(row:GetFrameLevel() + 6)
+  row.mainStar.rim = row.mainStar:CreateTexture(nil, "BACKGROUND")
+  row.mainStar.rim:SetTexture(Theme.media.dot)
+  row.mainStar.rim:SetAllPoints()
+  row.mainStar.rim:SetVertexColor(unpack(Theme.gold))
+  row.mainStar.disc = row.mainStar:CreateTexture(nil, "BORDER")
+  row.mainStar.disc:SetTexture(Theme.media.dot)
+  row.mainStar.disc:SetPoint("TOPLEFT", 1.5, -1.5)
+  row.mainStar.disc:SetPoint("BOTTOMRIGHT", -1.5, 1.5)
+  row.mainStar.disc:SetVertexColor(0.165, 0.129, 0.071, 1)
+  row.mainStar.icon = row.mainStar:CreateTexture(nil, "ARTWORK")
+  row.mainStar.icon:SetTexture(Theme.media.star)
+  row.mainStar.icon:SetPoint("TOPLEFT", 3.5, -3.5)
+  row.mainStar.icon:SetPoint("BOTTOMRIGHT", -3.5, 3.5)
+  row.mainStar.icon:SetVertexColor(unpack(Theme.gold))
+  row.mainStar:Hide()
 
   row.avatarModel = CreateFrame("PlayerModel", nil, row)
   row.avatarModel:SetSize(CONST.AVATAR_SIZE, CONST.AVATAR_SIZE)
@@ -2064,6 +2200,11 @@ local function CreateRow(parent)
 
   row.guildText = CreateLabel(row, 10, Theme.success)
   row.guildText:SetPoint("TOPLEFT", row.realmText, "BOTTOMLEFT", 0, -2)
+
+  row.realmFade = CreateLabel(row, 10, Theme.textFaint)
+  row.realmFade:Hide()
+  row.guildFade = CreateLabel(row, 10, Theme.success)
+  row.guildFade:Hide()
 
   row.ageFrame = CreateFrame("Frame", nil, parent)
   row.ageFrame:SetSize(15, 15)
@@ -2096,23 +2237,26 @@ local function CreateRow(parent)
   mainBadgeText:SetText(L["ROSTER_TAG_MAIN"])
   row.mainBadge:SetWidth(mainBadgeText:GetStringWidth() + 12)
   row.mainBadge.text = mainBadgeText
+  row.mainBadge:Hide()
 
   row.rosterTags = {}
   for i = 1, 2 do
     local tag = GG.RaidRostersTab.CreateTag(row, false)
+    V.RoundRosterTag(tag)
     tag.clickTarget = row.equipmentHitbox
     tag:SetFrameLevel(row.equipmentHitbox:GetFrameLevel() + 2)
     tag:Hide()
     row.rosterTags[i] = tag
   end
 
-  row.ilvlText = CreateMonoLabel(row, 15, { 0.64, 0.21, 0.93, 1 })
+  row.ilvlText = CreateMonoLabel(row, 15, CONST.ILVL_COLOR)
+  row.ilvlDec = CreateMonoLabel(row, 11, { CONST.ILVL_COLOR[1], CONST.ILVL_COLOR[2], CONST.ILVL_COLOR[3], 0.6 })
   row.ratingText = CreateMonoLabel(row, 15, Theme.textMuted)
   row.ratingHitbox = CreateFrame("Frame", nil, row)
 
   row.keyBadge = CreateFrame("Frame", nil, row, "BackdropTemplate")
   row.keyBadge:SetHeight(20)
-  ApplyBackdrop(row.keyBadge, { 1, 1, 1, 0.03 }, Theme.borderSoft)
+  ApplyBackdrop(row.keyBadge, { 1, 1, 1, 0.03 }, Theme.borderSoft, 1, 6)
   row.keyLevelText = CreateMonoLabel(row.keyBadge, 12, Theme.accentStrong)
   row.keyLevelText:SetPoint("LEFT", row.keyBadge, "LEFT", 6, 0)
   row.keyDungeonText = CreateLabel(row.keyBadge, 12, Theme.textMuted)
@@ -2128,10 +2272,11 @@ local function CreateRow(parent)
   row.vaultAlert = CreateLabel(row, 10, Theme.success, true)
   row.vaultAlert:SetText(L["VAULT_REWARDS_LABEL"])
   row.vaultAlert:Hide()
-  row.vaultAlertBg = row:CreateTexture(nil, "BORDER")
-  row.vaultAlertBg:SetColorTexture(Theme.success[1], Theme.success[2], Theme.success[3], 0.16)
-  row.vaultAlertBg:SetPoint("TOPLEFT", row.vaultAlert, "TOPLEFT", -5, 1)
-  row.vaultAlertBg:SetPoint("BOTTOMRIGHT", row.vaultAlert, "BOTTOMRIGHT", 5, -1)
+  row.vaultAlertBox = CreateFrame("Frame", nil, row)
+  row.vaultAlertBox:SetPoint("TOPLEFT", row.vaultAlert, "TOPLEFT", -5, 1)
+  row.vaultAlertBox:SetPoint("BOTTOMRIGHT", row.vaultAlert, "BOTTOMRIGHT", 5, -1)
+  row.vaultAlertBg = GG.Widgets.RoundedFill(row, row.vaultAlertBox, 4, "BORDER")
+  row.vaultAlertBg:SetColor(Theme.success[1], Theme.success[2], Theme.success[3], 0.16)
   row.vaultAlertBg:Hide()
   row.vaultAlertHitbox = CreateFrame("Button", nil, row)
   row.vaultAlertHitbox:SetAllPoints(row.vaultAlert)
@@ -2171,8 +2316,13 @@ local function CreateRow(parent)
     slot.icon = slot:CreateTexture(nil, "ARTWORK")
     slot.icon:SetSize(CurrencyGrid.ICON_SIZE, CurrencyGrid.ICON_SIZE)
     slot.icon:SetPoint("TOP", slot, "TOP", 0, -CurrencyGrid.ICON_TOP)
-    slot.capFrame = slot:CreateTexture(nil, "BORDER")
-    slot.capFrame:SetColorTexture(unpack(CurrencyGrid.CAP_COLOR))
+    slot.iconMask = slot:CreateMaskTexture()
+    slot.iconMask:SetTexture(Theme.media.roundMask, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    slot.iconMask:SetAllPoints(slot.icon)
+    slot.icon:AddMaskTexture(slot.iconMask)
+    slot.capFrame = GG.Widgets.NewRoundTexture(slot, "BORDER")
+    GG.Widgets.ApplyRound(slot.capFrame, "RoundFill", 5)
+    slot.capFrame:SetVertexColor(unpack(CurrencyGrid.CAP_COLOR))
     slot.capFrame:SetSize(CurrencyGrid.ICON_SIZE + 2, CurrencyGrid.ICON_SIZE + 2)
     slot.capFrame:SetPoint("CENTER", slot.icon, "CENTER", 0, 0)
     slot.capFrame:Hide()
@@ -2251,11 +2401,11 @@ local function PaintVaultGrid(row, record)
         local blockColor = tierColors[tierIndex] or color
         cell:SetText(text)
         cell:SetTextColor(0.07, 0.07, 0.09, 1)
-        cell.bg:SetColorTexture(blockColor[1], blockColor[2], blockColor[3], 0.95)
+        cell.bg:SetVertexColor(blockColor[1], blockColor[2], blockColor[3], 0.95)
         cell.bg:Show()
       else
         cell:SetText("")
-        cell.bg:SetColorTexture(0.17, 0.19, 0.24, 1)
+        cell.bg:SetVertexColor(0.17, 0.19, 0.24, 1)
         cell.bg:Show()
       end
     end
@@ -2500,7 +2650,7 @@ function V.PaintGauges(row, datum)
   if geom.ilvl and row.ilvlText:IsShown() then
     local lo = (range.min or datum.ilvl or 0) - 2
     RT.PaintGauge(row, store, "ilvl", geom.ilvl.x, geom.ilvl.y, geom.ilvl.w,
-      RT.GaugePct(datum.ilvl, lo, range.max or datum.ilvl), { 0.64, 0.21, 0.93, 1 })
+      RT.GaugePct(datum.ilvl, lo, range.max or datum.ilvl), CONST.ILVL_COLOR)
   else
     RT.HideGauge(store, "ilvl")
   end
@@ -2573,17 +2723,127 @@ function V.PaintSyncStatus(label, accounts)
   end
 end
 
-function V.NameWithClock(datum, showAvatar)
-  local clock = not showAvatar and GG.Roster:ClockState(datum.freshness)
-  if not clock then return datum.name end
+function V.NameWithClock(datum)
+  return datum.name
+end
+
+function GG.RosterUI.AccountChipText(datum, iconOnly)
+  local label = datum.accountLabel or ""
+  local clock, _, icon = GG.RosterUI.AccountClockText(datum)
+  if not clock then return label end
+  return label .. "  " .. (iconOnly and icon or clock)
+end
+
+function GG.RosterUI.AccountClockText(datum)
+  if not (datum.freshness and GG.Roster:ClockState(datum.freshness)) then return nil end
   local _, color, icon = V.FreshnessText(datum.freshness)
-  return ("|T%s:10:10:0:0:32:32:0:32:0:32:%d:%d:%d|t %s"):format(icon,
-    math.floor(color[1] * 255), math.floor(color[2] * 255), math.floor(color[3] * 255), datum.name)
+  local r, g, b = math.floor(color[1] * 255), math.floor(color[2] * 255), math.floor(color[3] * 255)
+  local iconText = ("|T%s:10:10:0:0:32:32:0:32:0:32:%d:%d:%d|t"):format(icon, r, g, b)
+  local age = V.FreshnessAge(datum.freshness.age or 0)
+  return ("%s |cff%02x%02x%02x%s|r"):format(iconText, r, g, b, age), age, iconText
+end
+
+function V.PaintMainStar(row, datum, showAvatar)
+  local isMain = datum.isMain == true
+  row.mainRing:SetShown(isMain and showAvatar)
+  row.mainFill:SetShown(isMain and showAvatar)
+  row.mainGlow:SetShown(isMain and showAvatar)
+  local star = row.mainStar
+  if not isMain then
+    star:Hide()
+    return
+  end
+  star:ClearAllPoints()
+  if showAvatar then
+    star:SetSize(17, 17)
+    star:SetPoint("CENTER", row.avatarRing, "TOPRIGHT", -1, -1)
+  else
+    star:SetSize(16, 16)
+    local textW = row.nameText:GetStringWidth()
+    local measured = textW and textW > 0
+    if not measured then
+      local _, size = row.nameText:GetFont()
+      textW = GG.Layout.EstimateWidth(datum.name, size or 15)
+    end
+    local centered = IsVertical() and not row.compactIdentity
+    local x = centered and ((row.nameText:GetWidth() + textW) / 2 + 3) or (textW + 4)
+    star:SetPoint("LEFT", row.nameText, "LEFT", x, 0)
+    if not measured and not row.starRetry then
+      row.starRetry = true
+      C_Timer.After(0, function()
+        row.starRetry = nil
+        if row.datum == datum and row:IsShown() then V.PaintMainStar(row, datum, showAvatar) end
+      end)
+    end
+  end
+  star:Show()
+end
+
+function V.MeasureText(text, size)
+  return GG.Layout.CachedWidth(V.MeasureRaw, text, size, Theme.font)
+end
+
+GG.RosterUI.MeasureText = function(text, size) return V.MeasureText(text, size) end
+
+function V.MeasureRaw(text, size, font)
+  local fs = state.fitMeasure
+  if not fs then
+    fs = UIParent:CreateFontString(nil, "OVERLAY")
+    fs:Hide()
+    state.fitMeasure = fs
+  end
+  fs:SetFont(font, size, "")
+  fs:SetText(text)
+  return fs:GetStringWidth()
+end
+
+function V.MeasureAtFitSize(text)
+  return V.MeasureText(text, state.fitSize or 10)
+end
+
+function V.FitIdentityText(row, datum, showAvatar)
+  local avail = (IsVertical() and not row.compactIdentity) and V.COL_CONTENT or row.identityAvail
+  if not avail or avail <= 0 then return end
+  local starW = (datum.isMain and not showAvatar) and 20 or 0
+  if IsVertical() then
+    local base = V.Theme().tokens.nameSize or VFONT.name
+    local sizes = state.nameSizes
+    if not sizes or sizes[2] ~= base then
+      sizes = { base + 2, base, base - 2 }
+      state.nameSizes = sizes
+    end
+    local size = GG.Layout.NameFontSize(datum.name or "", avail - starW, V.MeasureText, sizes)
+    row.nameText:SetFont(Theme.font, size, "")
+  end
+  for line = 1, 2 do
+    local label = line == 1 and row.realmText or row.guildText
+    local fade = line == 1 and row.realmFade or row.guildFade
+    local text = (line == 1 and datum.realm or datum.guild) or ""
+    local visible = line == 1 or row.guildText:IsShown()
+    local _, size = label:GetFont()
+    size = size or 10
+    state.fitSize = size
+    local chars, over = GG.Layout.FitChars(text, avail, V.MeasureAtFitSize, size)
+    if visible and over and fade.SetAlphaGradient then
+      label:SetText(" ")
+      fade:SetFont(Theme.font, size, "")
+      fade:SetTextColor(label:GetTextColor())
+      fade:SetJustifyH("LEFT")
+      fade:SetText(text)
+      fade:ClearAllPoints()
+      fade:SetPoint("TOPLEFT", label, "TOPLEFT", 0, 0)
+      fade:SetAlphaGradient(math.max(0, chars - 3), 4)
+      fade:Show()
+    else
+      fade:Hide()
+    end
+  end
 end
 
 function V.PaintFreshness(row, datum)
   local f = datum.freshness
   local clock = GG.Roster:ClockState(f)
+  clock = nil
   row.ageShown = clock ~= nil
   if not clock then
     row.ageFrame:Hide()
@@ -2623,11 +2883,120 @@ function V.ShowFreshnessTooltip(owner, datum)
   end)
 end
 
+function V.PaintQuestSlot(owner, slot, key, datum, shown, checks, checkHole)
+  local RT = GG.RosterThemes
+  local def = QUEST_ICONS[key]
+  slot.shown = shown
+  local slotSize = checks and RT.CHECK_SIZE or (CONST.NEMESIS_ICON_SIZE + 4)
+  slot.ring:SetSize(slotSize, slotSize)
+  slot.ring:SetShown(shown and not checks)
+  slot.backing:SetShown(shown and not checks)
+  slot.icon:SetShown(shown and not checks)
+  slot.hitbox:SetShown(shown)
+  slot.badge:SetShown(false)
+  slot.check:SetShown(false)
+  local paint = shown and def.paint(datum) or nil
+  local dotsOn = paint and paint.dotsOn or nil
+  for i, dot in ipairs(slot.dots) do
+    dot:SetShown(dotsOn ~= nil)
+    slot.dotBorders[i]:SetShown(dotsOn ~= nil)
+    if dotsOn then
+      dot:SetVertexColor(unpack(i <= dotsOn and CONST.QUEST_DOT_ON or CONST.ZERO_COLOR))
+    end
+  end
+
+  if paint and checks then
+    local ringColor = paint.ring
+    if ringColor == Theme.borderSoft or not ringColor then ringColor = RT.COLORS.checkIdle end
+    RT.PaintCheck(owner, slot, slot.ring, ringColor, paint.check == true, checkHole)
+  else
+    RT.HideCheck(slot)
+  end
+  if paint and not checks then
+    GG.Widgets.SetItemIcon(slot.icon, paint.icon)
+    local ring = paint.ring or Theme.borderSoft
+    slot.ring:SetVertexColor(ring[1], ring[2], ring[3], ring[4] or 1)
+    slot.check:SetShown(paint.check == true)
+    if paint.badge and not paint.check then
+      slot.badge:SetText(paint.badge)
+      slot.badge:SetTextColor(unpack(paint.badgeColor or Theme.textMuted))
+      slot.badge:Show()
+    end
+  end
+end
+
+function V.PaintAccountPill(row, datum, fontSize)
+  local label = datum.accountLabel or ""
+  local clock, age = GG.RosterUI.AccountClockText(datum)
+  local vertical = IsVertical()
+  local function TextWidth(fallback)
+    local w = row.accountText:GetStringWidth()
+    if not w or w <= 0 then w = fallback end
+    return w
+  end
+  local pillWidth
+  if vertical then
+    row.accountAge:Hide()
+    row.accountText:SetText(GG.RosterUI.AccountChipText(datum))
+    pillWidth = TextWidth(GG.Layout.EstimateWidth(label, fontSize) + (clock and (14 + GG.Layout.EstimateWidth(age, fontSize)) or 0)) + 20
+    if clock and pillWidth > V.COL_CONTENT then
+      row.accountText:SetText(GG.RosterUI.AccountChipText(datum, true))
+      pillWidth = TextWidth(GG.Layout.EstimateWidth(label, fontSize) + 14) + 20
+    end
+    pillWidth = math.min(pillWidth, V.COL_CONTENT)
+  else
+    row.accountText:SetText(label)
+    pillWidth = TextWidth(GG.Layout.EstimateWidth(label, fontSize)) + 20
+    pillWidth = math.min(pillWidth, columnLayout.account.width - CONST.LIST_ACCOUNT_INSET - 6)
+    local accountInner = columnLayout.account.width - CONST.LIST_ACCOUNT_INSET
+    row.accountCellBg:ClearAllPoints()
+    row.accountCellBg:SetPoint("CENTER", row, "TOPLEFT",
+      columnLayout.account.x + CONST.LIST_ACCOUNT_INSET + accountInner / 2, -CONST.ROW_HEIGHT / 2 + (clock and 6 or 0))
+    row.accountAge:SetShown(clock ~= nil)
+    if clock then
+      row.accountAge:SetText(clock)
+      row.accountAge:ClearAllPoints()
+      row.accountAge:SetPoint("TOP", row.accountCellBg, "BOTTOM", 0, -3)
+    end
+  end
+  row.accountCellBg:SetWidth(math.max(40, pillWidth))
+end
+
+function V.PlaceIlvl(row)
+  local spot = row.ilvlSpot
+  local dec = row.ilvlDec
+  local _, intSize = row.ilvlText:GetFont()
+  dec:SetShown(row.ilvlText:IsShown() and (dec:GetText() or "") ~= "")
+  dec:ClearAllPoints()
+  local _, decFont = dec:GetFont()
+  dec:SetPoint("BOTTOMLEFT", row.ilvlText, "BOTTOMRIGHT", 0, GG.Layout.DecimalLift(intSize, decFont))
+  if not (spot and spot.centered) then return end
+  local wInt = row.ilvlText:GetStringWidth()
+  local wDec = dec:IsShown() and dec:GetStringWidth() or 0
+  local measured = (wInt or 0) > 0 and (not dec:IsShown() or (wDec or 0) > 0)
+  if not wInt or wInt <= 0 then wInt = GG.Layout.EstimateWidth(row.ilvlText:GetText() or "", intSize or 15) end
+  if dec:IsShown() and (not wDec or wDec <= 0) then
+    local _, decSize = dec:GetFont()
+    wDec = GG.Layout.EstimateWidth(dec:GetText() or "", decSize or 10)
+  end
+  row.ilvlText:ClearAllPoints()
+  row.ilvlText:SetPoint("RIGHT", row, "TOP", (wInt - wDec) / 2, spot.y)
+  if not measured and not row.ilvlRetry then
+    row.ilvlRetry = true
+    local datum = row.datum
+    C_Timer.After(0, function()
+      row.ilvlRetry = nil
+      if row.datum == datum and row:IsShown() then V.PlaceIlvl(row) end
+    end)
+  end
+end
+
 local function PaintRow(row, datum, dataIndex)
   row.datum = datum
 
   local showAvatar = IsSectionVisible("avatar")
   row.avatarRing:SetShown(showAvatar)
+  row.ringFill:SetShown(showAvatar)
   if not showAvatar then
     row.avatar:Hide()
     row.avatarModel:Hide()
@@ -2652,12 +3021,11 @@ local function PaintRow(row, datum, dataIndex)
   local classColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[datum.class]
   if classColor then
     row.nameText:SetTextColor(classColor.r, classColor.g, classColor.b)
-    row.avatarRing:SetColorTexture(classColor.r, classColor.g, classColor.b, 0.6)
+    row.ringFill:SetColor(classColor.r, classColor.g, classColor.b, 0.6)
   else
     row.nameText:SetTextColor(unpack(Theme.textPrimary))
-    row.avatarRing:SetColorTexture(unpack(Theme.borderSoft))
+    row.ringFill:SetColor(Theme.borderSoft)
   end
-  row.mainRing:SetShown(datum.isMain and showAvatar)
   row.realmText:SetText(datum.realm)
 
   if datum.guild and datum.guild ~= "" and IsSectionVisible("guild") then
@@ -2680,11 +3048,11 @@ local function PaintRow(row, datum, dataIndex)
   end
   local leftStack = not IsVertical() or row.compactIdentity == true
   if leftStack and row.identityAvail then
-    row.nameText:SetWidth(math.max(20, row.identityAvail - (datum.isMain and (row.mainBadge:GetWidth() + 6) or 0)))
+    row.nameText:SetWidth(math.max(20, row.identityAvail - ((datum.isMain and not showAvatar) and 20 or 0)))
   end
 
-  row.mainBadge:SetShown(datum.isMain)
-  if datum.isMain then
+  row.mainBadge:Hide()
+  if false then
     local badgeW = row.mainBadge.text and row.mainBadge.text:GetStringWidth() or 0
     if not badgeW or badgeW <= 0 then badgeW = #(L["ROSTER_TAG_MAIN"] or "Main") * 6 end
     row.mainBadge:SetWidth(math.ceil(badgeW) + 12)
@@ -2697,29 +3065,35 @@ local function PaintRow(row, datum, dataIndex)
     end
   end
 
+  V.FitIdentityText(row, datum, showAvatar)
   LayoutIdentity(row)
+  V.PaintMainStar(row, datum, showAvatar)
 
   local accountColVisible = columnLayout.account.visible
   row.accountText:SetShown(accountColVisible)
   if accountColVisible then
     local accountStyle = (GGDB.options and GGDB.options.accountLabelStyle) or "cuenta"
-    row.accountText:SetFont(Theme.font, AccountTextFontSize(accountStyle), "")
-    row.accountText:SetText(datum.accountLabel or "")
-    local pillWidth = row.accountText:GetStringWidth() + 20
-    if not IsVertical() then pillWidth = math.min(pillWidth, columnLayout.account.width - CONST.LIST_ACCOUNT_INSET - 6) end
-    row.accountCellBg:SetWidth(math.max(40, pillWidth))
+    local fontSize = AccountTextFontSize(accountStyle)
+    row.accountText:SetFont(Theme.font, fontSize, "")
+    V.PaintAccountPill(row, datum, fontSize)
     do
       local colors = CONST.ACCOUNT_COLORS
       local c = colors[((datum.accountSlot or 1) - 1) % #colors + 1]
       row.accountCellBg:Show()
-      row.accountCellBg:SetColorTexture(c[1], c[2], c[3], 0.18)
+      row.accountFill:Show()
+      row.accountFill:SetColor(c[1], c[2], c[3], 0.18)
       row.accountText:SetTextColor(c[1], c[2], c[3], 1)
     end
   else
     row.accountCellBg:Hide()
+    row.accountFill:Hide()
+    row.accountAge:Hide()
   end
 
-  row.ilvlText:SetText(FormatIlvl(datum.ilvl))
+  local ilvlWhole, ilvlDecimals = GG.Layout.SplitIlvl(datum.ilvl)
+  row.ilvlText:SetText(ilvlWhole)
+  row.ilvlDec:SetText(ilvlDecimals)
+  V.PlaceIlvl(row)
 
   row.ratingText:SetText(datum.rating > 0 and tostring(datum.rating) or "—")
   row.ratingText:SetTextColor(unpack(datum.rating >= 2000 and Theme.gold or Theme.textMuted))
@@ -2732,7 +3106,12 @@ local function PaintRow(row, datum, dataIndex)
     row.keyLevelText:SetText("+" .. level)
     row.keyLevelText:SetTextColor(unpack(tierColor))
     row.keyDungeonText:SetText(AbbreviateDungeonName(datum.keystone.challengeModeID, datum.keystone.dungeon))
-    row.keyBadge:SetWidth(row.keyLevelText:GetStringWidth() + row.keyDungeonText:GetStringWidth() + 16)
+    local _, keySize = row.keyLevelText:GetFont()
+    local levelW = row.keyLevelText:GetStringWidth()
+    if not levelW or levelW <= 0 then levelW = GG.Layout.EstimateWidth(row.keyLevelText:GetText() or "", keySize or 12) end
+    local dungeonW = row.keyDungeonText:GetStringWidth()
+    if not dungeonW or dungeonW <= 0 then dungeonW = GG.Layout.EstimateWidth(row.keyDungeonText:GetText() or "", keySize or 12) end
+    row.keyBadge:SetWidth(levelW + dungeonW + 16)
     row.keyBadge:Show()
     row.noKeyText:Hide()
   elseif keystoneColVisible then
@@ -2795,51 +3174,12 @@ local function PaintRow(row, datum, dataIndex)
   local RT = GG.RosterThemes
   local checks = V.Theme().parts.quests == "checks"
   local checkHole = checks and RT.SurfaceColor(V.Theme(), datum.isCurrent, IsVertical()) or nil
-  local function CheckRing(color)
-    return (color == Theme.borderSoft or not color) and RT.COLORS.checkIdle or color
-  end
   local anchorSize = checks and RT.CHECK_SIZE or (CONST.NEMESIS_ICON_SIZE + 4)
   row.questAnchor:SetSize(anchorSize, anchorSize)
 
   for _, key in ipairs(QUEST_ICON_ORDER) do
-    local slot = row.questIcons[key]
-    local shown = columnLayout.currencies.visible and QUEST_ICON_VISIBLE[key]()
-    slot.shown = shown
-    local slotSize = checks and RT.CHECK_SIZE or (CONST.NEMESIS_ICON_SIZE + 4)
-    slot.ring:SetSize(slotSize, slotSize)
-    slot.ring:SetShown(shown and not checks)
-    slot.backing:SetShown(shown and not checks)
-    slot.icon:SetShown(shown and not checks)
-    slot.hitbox:SetShown(shown)
-    slot.badge:SetShown(false)
-    slot.check:SetShown(false)
-    local dotsOn = shown and QUEST_ICONS[key].paint(datum).dotsOn or nil
-    for i, dot in ipairs(slot.dots) do
-      dot:SetShown(dotsOn ~= nil)
-      slot.dotBorders[i]:SetShown(dotsOn ~= nil)
-      if dotsOn then
-        dot:SetVertexColor(unpack(i <= dotsOn and CONST.QUEST_DOT_ON or CONST.ZERO_COLOR))
-      end
-    end
-
-    if shown and checks then
-      local paint = QUEST_ICONS[key].paint(datum)
-      RT.PaintCheck(row, slot, slot.ring, CheckRing(paint.ring), paint.check == true, checkHole)
-    else
-      RT.HideCheck(slot)
-    end
-    if shown and not checks then
-      local paint = QUEST_ICONS[key].paint(datum)
-      GG.Widgets.SetItemIcon(slot.icon, paint.icon)
-      local ring = paint.ring or Theme.borderSoft
-      slot.ring:SetColorTexture(ring[1], ring[2], ring[3], ring[4] or 1)
-      slot.check:SetShown(paint.check == true)
-      if paint.badge and not paint.check then
-        slot.badge:SetText(paint.badge)
-        slot.badge:SetTextColor(unpack(paint.badgeColor or Theme.textMuted))
-        slot.badge:Show()
-      end
-    end
+    V.PaintQuestSlot(row, row.questIcons[key], key, datum,
+      columnLayout.currencies.visible and QUEST_ICON_VISIBLE[key](), checks, checkHole)
   end
   ApplyDelvesAlignment(row)
 
@@ -2882,7 +3222,7 @@ local function PaintRow(row, datum, dataIndex)
         color = CurrencyGrid.CAP_COLOR
       end
       slot.text:SetTextColor(unpack(color))
-      slot.capFrame:SetColorTexture(unpack(CurrencyGrid.CAP_COLOR))
+      slot.capFrame:SetVertexColor(unpack(CurrencyGrid.CAP_COLOR))
       slot.capFrame:SetShown(atCap and slot.icon:IsShown())
       slot.icon:SetAlpha(quantity == 0 and 0.4 or 1)
       slot:Show()
@@ -2911,7 +3251,7 @@ function V.HeatOf(datum, range)
   local heat = { raid = {} }
   if datum.ilvl and datum.ilvl > 0 then
     local lo, hi = range.min or datum.ilvl, range.max or datum.ilvl
-    heat.ilvl = { color = { 0.64, 0.21, 0.93 }, t = hi > lo and math.max(0, math.min(1, (datum.ilvl - lo) / (hi - lo))) or 1 }
+    heat.ilvl = { color = CONST.ILVL_COLOR, t = hi > lo and math.max(0, math.min(1, (datum.ilvl - lo) / (hi - lo))) or 1 }
   end
   if datum.rating and datum.rating > 0 then
     heat.rating = { color = datum.rating >= 2000 and Theme.gold or Theme.textMuted, t = datum.rating / 3000 }
@@ -2968,6 +3308,7 @@ local function PositionRowHorizontal(row)
   row.accountText:SetFont(Theme.font, HFONT.account, "")
   local bump = tokens.numBump or 0
   row.ilvlText:SetFont(Theme.font, HFONT.ilvl + bump, "")
+  row.ilvlDec:SetFont(Theme.font, HFONT.ilvlDec + bump, "")
   row.ratingText:SetFont(Theme.font, HFONT.rating + bump, "")
   row.keyLevelText:SetFont(Theme.font, HFONT.keyLevel, "")
   row.keyDungeonText:SetFont(Theme.font, HFONT.keyDungeon, "")
@@ -3076,6 +3417,8 @@ local function PositionRowHorizontal(row)
   row.ilvlText:SetShown(ilvlLayout.visible)
   row.ilvlText:ClearAllPoints()
   row.ilvlText:SetPoint("LEFT", row, "LEFT", ilvlLayout.x + CONST.CELL_PADDING, numberLift)
+  row.ilvlSpot = { centered = false }
+  V.PlaceIlvl(row)
 
   row.ratingText:SetShown(ratingLayout.visible)
   row.ratingText:ClearAllPoints()
@@ -3233,6 +3576,9 @@ local function PositionRowVertical(row)
   row.ilvlText:ClearAllPoints()
   row.ilvlText:SetPoint("CENTER", row, "TOP", 0, MidY(ilvlSection) + numberLift)
   row.ilvlText:SetFont(Theme.font, VFONT.ilvl + (tokens.numBump or 0), "")
+  row.ilvlDec:SetFont(Theme.font, VFONT.ilvlDec + (tokens.numBump or 0), "")
+  row.ilvlSpot = { centered = true, y = MidY(ilvlSection) + numberLift }
+  V.PlaceIlvl(row)
   row.ilvlHitbox:SetShown(ilvlSection.visible)
   row.ilvlHitbox:ClearAllPoints()
   row.ilvlHitbox:SetPoint("TOPLEFT", row, "TOPLEFT", V.COL_PADDING, -(ilvlSection.y or 0))
@@ -3435,7 +3781,7 @@ local function BuildSettingsColumnsPreview(container)
   guild:SetText(datum.guild or "")
 
   local ilvlCell, ilvlContent = PreviewWrapCell(container, L["SECTION_ILVL"], 52)
-  local ilvl = CreateMonoLabel(ilvlContent, HFONT.ilvl, { 0.64, 0.21, 0.93, 1 })
+  local ilvl = CreateMonoLabel(ilvlContent, HFONT.ilvl, CONST.ILVL_COLOR)
   ilvl:SetPoint("LEFT", ilvlContent, "LEFT", 0, 0)
   ilvl:SetText(FormatIlvl(datum.ilvl))
 
@@ -3546,7 +3892,7 @@ local function BuildSettingsColumnsPreview(container)
       end
       local RT = GG.RosterThemes
       RT.PaintGauge(ilvlContent, gaugeStore, "ilvl", 0, CONST.ROW_HEIGHT / 2 + 8, 46,
-        RT.GaugePct(datum.ilvl, (lo or 0) - 2, hi), { 0.64, 0.21, 0.93, 1 })
+        RT.GaugePct(datum.ilvl, (lo or 0) - 2, hi), CONST.ILVL_COLOR)
       RT.PaintGauge(ratingContent, gaugeStore, "rating", 0, CONST.ROW_HEIGHT / 2 + 8, 40,
         RT.GaugePct(datum.rating, 800, 3000), datum.rating >= 2000 and Theme.gold or Theme.textMuted)
     else
@@ -3674,6 +4020,7 @@ function PV.Label(canvas, text, top, height, color)
   fs:SetWidth(PV.LABEL_W - 6)
   fs:SetPoint("RIGHT", canvas, "TOPLEFT", PV.LABEL_W - 6, -(top + height / 2))
   fs:SetText(text)
+  if PV.noLabels then fs:Hide() end
   return fs
 end
 
@@ -3683,6 +4030,7 @@ function PV.Title(canvas, text, top, height, block)
   fs:SetWidth(PV.COL_X + 10)
   fs:SetPoint("LEFT", canvas, "TOPLEFT", tok.blocks and 8 or 0, -(top + height / 2))
   fs:SetText(text)
+  if PV.noLabels then fs:Hide() end
   local s = tok.separator
   if s == "glow" then
     GG.RosterThemes.PaintGlowSeparators(canvas, {}, PV.COL_X, V.COL_WIDTH, { math.floor(top + height / 2) }, tok)
@@ -3789,7 +4137,7 @@ function PV.DrawSection(canvas, section, top, datum)
     PV.Label(canvas, section.label, top, section.height)
     local gauge = V.Theme().parts.nums == "gauge"
     local isIlvl = key == "ilvl"
-    local color = isIlvl and { 0.64, 0.21, 0.93, 1 } or (datum.rating >= 2000 and Theme.gold or Theme.textMuted)
+    local color = isIlvl and CONST.ILVL_COLOR or (datum.rating >= 2000 and Theme.gold or Theme.textMuted)
     local text = CreateMonoLabel(canvas, (isIlvl and VFONT.ilvl or VFONT.rating) + (V.Theme().tokens.numBump or 0), color)
     PV.CenteredText(canvas, text, top, section.height, gauge and 4 or 0)
     if isIlvl then
@@ -3941,9 +4289,17 @@ local function BuildSettingsColumnsPreviewVertical(container)
   return function()
     V.ApplyTheme()
     PV.Clear(canvas)
+    local height = PV.DrawColumn(canvas, PreviewPickDatum() or datum)
+    PV.FitHeight(container, canvas, height)
+  end
+end
+
+function PV.DrawColumn(canvas, fresh, opts)
+  opts = opts or {}
+  PV.noLabels = opts.noLabels
+  do
     canvas.themeSurface = nil
     canvas.previewAvatar = nil
-    local fresh = PreviewPickDatum() or datum
     local y = V.TOP_PADDING
     local headSplit, headBottom
     local sections = BuildVerticalSections()
@@ -3952,6 +4308,12 @@ local function BuildSettingsColumnsPreviewVertical(container)
       section.visible = IsSectionVisible(section.optionKey)
         and (section.extraVisible == nil or section.extraVisible())
       if section.key == "bounty" then section.visible = false end
+      if opts.only and not section.band and not opts.only[section.key] then section.visible = false end
+      if opts.only and section.key == "raid" and section.difficulties and #section.difficulties > 1 then
+        section.difficulties = { section.difficulties[1] }
+        section.height = section.bandHeight or section.height
+        if section.zebraRows then section.zebraRows.count = 1 end
+      end
       byKey[section.key] = section
     end
     for _, section in ipairs(sections) do
@@ -3995,18 +4357,19 @@ local function BuildSettingsColumnsPreviewVertical(container)
     }, {
       T = V.Theme(), vertical = true,
       classColor = classColor and { classColor.r, classColor.g, classColor.b } or nil,
-      isCurrent = fresh.isCurrent == true, alphaMul = 1,
+      isCurrent = (opts.isCurrent == nil and fresh.isCurrent == true) or opts.isCurrent == true, alphaMul = 1,
       heat = tok.heat and V.HeatOf(fresh, range) or nil,
     })
 
-    if tok.blocks and #layout.blocks > 0 then
+    if tok.blocks and #layout.blocks > 0 and not opts.noLabels then
       local top, bottom = layout.blocks[1].a, layout.blocks[#layout.blocks].b
       GG.RosterThemes.PaintSpine(canvas, {}, { x = 0, y = top, w = tok.spineWidth or 3, h = bottom - top },
         "VERTICAL", layout.blocks, top, tok.blocks)
     end
 
     canvas:SetSize(PV.COL_X + V.COL_WIDTH, height)
-    PV.FitHeight(container, canvas, height)
+    PV.noLabels = nil
+    return height
   end
 end
 
@@ -4200,7 +4563,7 @@ local function FullyVisibleRowCount()
   if IsVertical() then
     local visibleWidth = scrollClip:GetWidth()
     if visibleWidth <= 0 then return 1 end
-    return math.max(1, math.floor(visibleWidth / V.ColPitch()))
+    return math.max(1, math.floor((visibleWidth + 4) / V.ColPitch()))
   end
   local visibleHeight = scrollClip:GetHeight()
   if visibleHeight <= 0 then return 1 end
@@ -4220,7 +4583,7 @@ local function UpdateEmptyState()
     frame.emptyText:Hide()
     return
   end
-  local total = #GG.Roster:BuildRows()
+  local total = #V.AllRows()
   local text
   if total > 0 then
     text = L["ROSTER_NO_RESULTS"]
@@ -4256,10 +4619,24 @@ function V.PaintTableDecor(shownCount)
   GG.RosterThemes.PaintGlowSeparators(store.frame, store, V.COL_GAP, math.max(1, width), ys, tok)
 end
 
-local function UpdateVisibleRows()
-  if state.filterTab ~= "all" then
+local function UpdateVisibleRows(maySkip)
+  local accountsOn = state.filterTab == "all" and state.IsAccounts() and not settingsOpen
+  if GG.AccountsView then GG.AccountsView:SetShown(accountsOn) end
+  if accountsOn then
+    state.rowPaintKey = nil
     for _, row in ipairs(rowPool) do row:Hide() end
     V.PaintTableDecor(0)
+    V.PaintOverflowTabs(false)
+    if scrollbar then scrollbar:Hide() end
+    if hscrollbar then hscrollbar:Hide() end
+    GG.AccountsView:Render(dataRows, state.AccountsAvailWidth and state.AccountsAvailWidth() or nil)
+    return
+  end
+  if state.filterTab ~= "all" then
+    state.rowPaintKey = nil
+    for _, row in ipairs(rowPool) do row:Hide() end
+    V.PaintTableDecor(0)
+    V.PaintOverflowTabs(false)
     if state.filterTab == "raid" or state.filterTab == "bonusRoll" or state.filterTab == "rosters" then
       if scrollbar then scrollbar:Hide() end
       if hscrollbar then hscrollbar:Hide() end
@@ -4270,6 +4647,23 @@ local function UpdateVisibleRows()
   local total = #dataRows
   local maxOffset = math.max(0, total - FullyVisibleRowCount())
   scrollOffset = math.max(0, math.min(scrollOffset, maxOffset))
+
+  if state.revealCurrent and GG.OverflowTabs and not state.awaitingMeasure
+    and ((IsVertical() and scrollClip:GetWidth() or scrollClip:GetHeight()) or 0) > 0 then
+    state.revealCurrent = nil
+    for i, datum in ipairs(dataRows) do
+      if datum.isCurrent then
+        scrollOffset = GG.OverflowTabs.RevealOffset(total, i, FullyVisibleRowCount(), scrollOffset)
+        break
+      end
+    end
+  end
+
+  local a = Theme.accent
+  local paintKey = table.concat({ tostring(dataRows), scrollOffset, #rowPool, maxOffset, tostring(state.rowGeomKey),
+    V.Theme().signature, a[1], a[2], a[3], tostring(state.dragEditMode), tostring(IsVertical()), tostring(settingsOpen), state.LayoutKey() }, "|")
+  if maySkip and paintKey == state.rowPaintKey then return end
+  state.rowPaintKey = paintKey
 
   local shownCount = 0
   for i, row in ipairs(rowPool) do
@@ -4298,27 +4692,60 @@ local function UpdateVisibleRows()
       activeBar:Hide()
     end
   end
+  V.PaintOverflowTabs(not settingsOpen)
 
   UpdateEmptyState()
+end
+
+function V.PaintOverflowTabs(show)
+  local OT = GG.OverflowTabs
+  if not OT or not scrollClip or not frame then return end
+  if not state.overflowTabs then
+    if not show then return end
+    state.overflowTabs = OT:Create(frame, scrollClip, function(dir)
+      scrollOffset = scrollOffset + dir * FullyVisibleRowCount()
+      UpdateVisibleRows()
+    end)
+  end
+  if not show then
+    OT:Update(state.overflowTabs, nil)
+    return
+  end
+  OT:Update(state.overflowTabs, {
+    total = #dataRows,
+    offset = scrollOffset,
+    visible = FullyVisibleRowCount(),
+    columns = IsVertical(),
+    animate = state.AnimationsOn(),
+    endGap = IsVertical() and 4 or (CONST.SCROLLBAR_WIDTH + 4),
+  })
 end
 
 local function CreateVaultCard(parent)
   local card = CreateFrame("Frame", nil, parent, "BackdropTemplate")
   card:SetSize(CONST.VAULT_CARD_WIDTH, CONST.VAULT_CARD_HEIGHT)
-  ApplyBackdrop(card, Theme.panel, Theme.border, 2)
+  ApplyBackdrop(card, Theme.panel, Theme.border, 2, 9)
 
-  card.hoverGlow = card:CreateTexture(nil, "OVERLAY")
-  card.hoverGlow:SetAllPoints()
-  card.hoverGlow:SetColorTexture(1, 1, 1, 0.035)
+  card.hoverGlow = GG.Widgets.RoundedFill(card, card, 9, "OVERLAY")
+  card.hoverGlow:SetColor(1, 1, 1, 0.035)
   card.hoverGlow:Hide()
   card:EnableMouse(true)
   card:SetScript("OnEnter", function(self) self.hoverGlow:Show() end)
   card:SetScript("OnLeave", function(self) self.hoverGlow:Hide() end)
   card.mainRing = card:CreateTexture(nil, "BORDER")
   card.mainRing:SetSize(24 + 4, 24 + 4)
-  card.mainRing:SetColorTexture(unpack(Theme.gold))
+  card.mainRing:SetColorTexture(0, 0, 0, 0)
   card.mainRing:SetPoint("TOPLEFT", CONST.VAULT_CARD_PADDING - 4, -(CONST.VAULT_CARD_PADDING - 4))
   card.mainRing:Hide()
+  card.mainFill = GG.Widgets.RoundedFill(card, card.mainRing, 7, "BORDER")
+  card.mainFill:SetColor(Theme.gold)
+  card.mainFill:Hide()
+  card.mainStar = card:CreateTexture(nil, "OVERLAY")
+  card.mainStar:SetTexture(Theme.media.star)
+  card.mainStar:SetSize(11, 11)
+  card.mainStar:SetPoint("CENTER", card.mainRing, "TOPRIGHT", -2, -2)
+  card.mainStar:SetVertexColor(unpack(Theme.gold))
+  card.mainStar:Hide()
 
   card.classIconRing = card:CreateTexture(nil, "BORDER")
   card.classIconRing:SetSize(24, 24)
@@ -4351,29 +4778,35 @@ local function CreateVaultCard(parent)
   card.body:SetPoint("TOPRIGHT", -CONST.VAULT_CARD_PADDING, -CONST.VAULT_CARD_HEADER_HEIGHT)
   card.body:SetHeight(1)
 
+  card.topBandEnds = {}
+  for i, side in ipairs({ "LEFT", "RIGHT" }) do
+    local tip = card:CreateTexture(nil, "ARTWORK")
+    tip:SetSize(7, 3)
+    tip:SetPoint("TOP" .. side, card, "TOP" .. side, i == 1 and 2 or -2, -2)
+    tip:SetTexture("Interface\\AddOns\\GG\\Media\\RoundFill7.tga")
+    if i == 1 then tip:SetTexCoord(0, 7 / 16, 0, 3 / 16) else tip:SetTexCoord(9 / 16, 1, 0, 3 / 16) end
+    card.topBandEnds[i] = tip
+  end
   card.topBand = card:CreateTexture(nil, "ARTWORK")
-  card.topBand:SetPoint("TOPLEFT", 2, -2)
-  card.topBand:SetPoint("TOPRIGHT", -2, -2)
-  card.topBand:SetHeight(3)
+  card.topBand:SetPoint("TOPLEFT", card.topBandEnds[1], "TOPRIGHT", 0, 0)
+  card.topBand:SetPoint("BOTTOMRIGHT", card.topBandEnds[2], "BOTTOMLEFT", 0, 0)
   card.headGlow = card:CreateTexture(nil, "BACKGROUND", nil, 1)
-  card.headGlow:SetPoint("TOPLEFT", 2, -2)
-  card.headGlow:SetPoint("TOPRIGHT", -2, -2)
-  card.headGlow:SetHeight(40)
+  card.headGlow:SetPoint("TOPLEFT", 2, -5)
+  card.headGlow:SetPoint("TOPRIGHT", -2, -5)
+  card.headGlow:SetHeight(37)
   card.headGlow:SetColorTexture(1, 1, 1, 1)
 
   card.acctChip = CreateFrame("Frame", nil, card)
   card.acctChip:SetHeight(16)
   card.acctChip:SetPoint("TOPRIGHT", -CONST.VAULT_CARD_PADDING, -CONST.VAULT_CARD_PADDING)
-  card.acctChip.bg = card.acctChip:CreateTexture(nil, "BACKGROUND")
-  card.acctChip.bg:SetAllPoints()
+  card.acctChip.bg = GG.Widgets.RoundedFill(card.acctChip, card.acctChip, 4, "BACKGROUND")
   card.acctChip.text = CreateLabel(card.acctChip, 10, Theme.textPrimary, true)
   card.acctChip.text:SetPoint("CENTER", 0, 0)
 
   card.stateChip = CreateFrame("Frame", nil, card)
   card.stateChip:SetHeight(18)
-  card.stateChip:SetPoint("TOPLEFT", CONST.VAULT_CARD_PADDING, -42)
-  card.stateChip.bg = card.stateChip:CreateTexture(nil, "BACKGROUND")
-  card.stateChip.bg:SetAllPoints()
+  card.stateChip:SetPoint("TOPLEFT", CONST.VAULT_CARD_PADDING, -38)
+  card.stateChip.bg = GG.Widgets.RoundedFill(card.stateChip, card.stateChip, 5, "BACKGROUND")
   card.stateChip.dot = card.stateChip:CreateTexture(nil, "ARTWORK")
   card.stateChip.dot:SetSize(6, 6)
   card.stateChip.dot:SetPoint("LEFT", 7, 0)
@@ -4393,7 +4826,7 @@ local function SetVaultCardState(card, kind)
   }
   local def = defs[kind] or defs.open
   local c = def.color
-  card.stateChip.bg:SetColorTexture(c[1], c[2], c[3], 0.16)
+  card.stateChip.bg:SetColor(c[1], c[2], c[3], 0.16)
   card.stateChip.dot:SetColorTexture(c[1], c[2], c[3], 1)
   card.stateChip.text:SetTextColor(c[1], c[2], c[3], 1)
   card.stateChip.text:SetText(L[def.key]:upper())
@@ -4415,7 +4848,9 @@ local function PaintVaultCard(card, row)
   ClearVaultCardBody(card)
 
   card.mainRing:SetShown(row.isMain)
-  card.mainBadge:SetShown(row.isMain)
+  card.mainFill:SetShown(row.isMain == true)
+  card.mainStar:SetShown(row.isMain == true)
+  card.mainBadge:Hide()
 
   local classColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[row.class]
   card.nameText:SetText(row.name)
@@ -4432,13 +4867,15 @@ local function PaintVaultCard(card, row)
     card.headGlow:SetGradient("VERTICAL", CreateColor(1, 1, 1, 0), CreateColor(1, 1, 1, 0.04))
   end
   card:SetBackdropBorderColor(unpack(Theme.border))
+  local tipColor = classColor and { classColor.r, classColor.g, classColor.b, 1 } or Theme.border
+  for _, tip in ipairs(card.topBandEnds) do tip:SetVertexColor(tipColor[1], tipColor[2], tipColor[3], tipColor[4] or 1) end
 
   local accountColors = CONST.ACCOUNT_COLORS
   local ac = accountColors[((row.accountSlot or 1) - 1) % #accountColors + 1]
   card.acctChip:SetShown((row.accountLabel or "") ~= "")
   card.acctChip.text:SetText(row.accountLabel or "")
   card.acctChip.text:SetTextColor(ac[1], ac[2], ac[3], 1)
-  card.acctChip.bg:SetColorTexture(ac[1], ac[2], ac[3], 0.18)
+  card.acctChip.bg:SetColor(ac[1], ac[2], ac[3], 0.18)
   card.acctChip:SetWidth(card.acctChip.text:GetStringWidth() + 12)
   card.realmText:SetText(row.realm)
   if row.isMain then
@@ -4657,21 +5094,28 @@ local function SyncAccountTabs(rows)
   seg:Paint(state.accountFilter or "__all")
 end
 
-local function RebuildDataRows()
+local function RebuildDataRows(noPaint)
   local rows = GG.Roster:BuildRows()
+  state.allRows = rows
+  if state.classTest then
+    local keys, pos = {}, {}
+    for _, r in ipairs(rows) do keys[#keys + 1] = r.key end
+    table.sort(keys)
+    for i, k in ipairs(keys) do pos[k] = i end
+    local list = CONST.TEST_CLASSES
+    for _, r in ipairs(rows) do r.class = list[((pos[r.key] or 1) - 1) % #list + 1] end
+  end
   SyncAccountTabs(rows)
   UpdateNavBadges(rows)
-  if #rows ~= state.charCount then
-    state.charCount = #rows
-    if AutoSizeWindow then AutoSizeWindow() end
-  end
 
-  local filtered = {}
+  local filtered, sizeRows = {}, {}
   for _, row in ipairs(rows) do
-    if RowMatchesFilterTab(row) and RowMatchesSearch(row) then
-      table.insert(filtered, row)
+    if RowMatchesFilterTab(row) then
+      sizeRows[#sizeRows + 1] = row
+      if RowMatchesSearch(row) then table.insert(filtered, row) end
     end
   end
+  state.sizeRows = sizeRows
   if state.sortKey == "custom" then PrepareArrange(rows) end
   local comparator = BuildComparator()
   if state.filterTab == "vaultPending" then
@@ -4696,8 +5140,23 @@ local function RebuildDataRows()
   end
   if ilvlMax then ilvlMin = math.max(ilvlMin, ilvlMax - V.ILVL_GAUGE_WINDOW) end
   state.ilvlRange = { min = ilvlMin, max = ilvlMax }
-  UpdateVisibleRows()
-  UpdateVaultCards(true)
+
+  local resized = false
+  local sizeKey = #rows .. "|" .. #sizeRows .. "|" .. tostring(state.accountFilter) .. "|" .. tostring(state.filterTab)
+  if sizeKey ~= state.sizeKey then
+    state.sizeKey = sizeKey
+    state.charCount = #rows
+    if AutoSizeWindow and not noPaint then resized = AutoSizeWindow() end
+  end
+  if noPaint then
+    state.vaultRepaint = true
+  elseif resized and GG.RosterUI.Relayout then
+    state.vaultRepaint = true
+    GG.RosterUI:Relayout()
+  else
+    UpdateVisibleRows()
+    UpdateVaultCards(true)
+  end
 
   if countLabel then
     countLabel:SetText(state.compactBar and tostring(#dataRows) or L["ROSTER_COUNT"]:format(#dataRows))
@@ -4727,13 +5186,15 @@ local function UpdateHeaderArrows()
     SyncSortedByLabel()
     local active = state.dragEditMode
     if active then
-      ApplyBackdrop(customOrderBtn, Theme.accent, Theme.accent, 1)
+      customOrderBtn:SetBackdropColor(unpack(Theme.accent))
       customOrderBtn.label:SetTextColor(unpack(Theme.onAccent))
       if customOrderBtn.icon then customOrderBtn.icon:SetVertexColor(unpack(Theme.onAccent)) end
+      if customOrderBtn.chevron then customOrderBtn.chevron:SetVertexColor(unpack(Theme.onAccent)) end
     else
-      ApplyBackdrop(customOrderBtn, { Theme.accent[1], Theme.accent[2], Theme.accent[3], 0.16 }, Theme.accent, 1)
+      customOrderBtn:SetBackdropColor(Theme.accent[1], Theme.accent[2], Theme.accent[3], 0.16)
       customOrderBtn.label:SetTextColor(unpack(Theme.textPrimary))
       if customOrderBtn.icon then customOrderBtn.icon:SetVertexColor(unpack(Theme.accentHi)) end
+      if customOrderBtn.chevron then customOrderBtn.chevron:SetVertexColor(1, 1, 1, 0.75) end
     end
   end
 
@@ -4770,19 +5231,26 @@ local function SetFilterTab(tab)
   PaintNavTabs()
   UpdateFooter()
 
+  scrollOffset = 0
+  vaultScrollOffsetPx = 0
+  if tab == "all" then state.revealCurrent = true end
+  RebuildDataRows(true)
   GG.RosterUI:Relayout()
 
   if GG.RaidTab then GG.RaidTab:SetShown(tab == "raid") end
   if GG.BonusRollTab then GG.BonusRollTab:SetShown(tab == "bonusRoll") end
   if GG.RaidRostersTab then GG.RaidRostersTab:SetShown(tab == "rosters") end
-
-  scrollOffset = 0
-  vaultScrollOffsetPx = 0
-  RebuildDataRows()
+  state.screenWidth = state.canvas and state.canvas:GetWidth() or nil
+  if scrollClip and state.AnimationsOn() and UIFrameFadeIn and frame and frame:IsShown() then
+    UIFrameFadeIn(scrollClip, 0.2, 0, 1)
+  end
 end
 
 function GG.RosterUI:SelectTab(tab)
-  if settingsOpen and settingsBtn then settingsBtn:Click() end
+  if settingsOpen and state.closeSettings then
+    state.closeSettings(tab)
+    return
+  end
   SetFilterTab(tab)
 end
 
@@ -4853,7 +5321,7 @@ function UpdateSidebar()
     if section.visible then
       if section.band then
         local label = NextLabel(V.TITLE_SIZE, Theme.accent, true)
-        label:SetText(L[section.band])
+        label:SetText(L[section.band]:upper())
         label:ClearAllPoints()
         label:SetPoint("LEFT", sidebar, "TOPLEFT", V.SIDE_X, -(section.y + section.height / 2))
       elseif section.currencyLabels then
@@ -4909,8 +5377,8 @@ local function SaveWindowState()
     relativePoint = relativePoint,
     x = x,
     y = y,
-    width = frame:GetWidth(),
-    height = frame:GetHeight(),
+    width = (state.canvas or frame):GetWidth(),
+    height = (state.canvas or frame):GetHeight(),
   }
 end
 
@@ -4919,6 +5387,7 @@ V.HSCROLL_HEIGHT = 14
 local function TabUsesOwnCanvas()
   return state.filterTab == "vaultPending" or state.filterTab == "raid" or state.filterTab == "bonusRoll"
     or state.filterTab == "rosters"
+    or (state.filterTab == "all" and state.IsAccounts())
 end
 
 local function ApplyLayoutAnchors()
@@ -4931,7 +5400,7 @@ local function ApplyLayoutAnchors()
   if sidebar then
     sidebar:ClearAllPoints()
     sidebar:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, 0)
-    sidebar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, CONST.FOOTER_HEIGHT + V.HSCROLL_HEIGHT)
+    sidebar:SetPoint("BOTTOMLEFT", state.canvas, "BOTTOMLEFT", 0, CONST.FOOTER_HEIGHT + V.HSCROLL_HEIGHT)
     sidebar:SetWidth(V.SIDEBAR_WIDTH)
     sidebar:SetShown(not settingsOpen and vertical and not TabUsesOwnCanvas())
   end
@@ -4939,13 +5408,13 @@ local function ApplyLayoutAnchors()
   scrollClip:ClearAllPoints()
   if vertical and not TabUsesOwnCanvas() then
     scrollClip:SetPoint("TOPLEFT", top, "BOTTOMLEFT", V.SIDEBAR_WIDTH, 0)
-    scrollClip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, CONST.FOOTER_HEIGHT + V.HSCROLL_HEIGHT)
-  elseif vertical then
+    scrollClip:SetPoint("BOTTOMRIGHT", state.canvas, "BOTTOMRIGHT", -4, CONST.FOOTER_HEIGHT + V.HSCROLL_HEIGHT)
+  elseif vertical or TabUsesOwnCanvas() then
     scrollClip:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, 0)
-    scrollClip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -CONST.SCROLLBAR_WIDTH - 4, CONST.FOOTER_HEIGHT)
+    scrollClip:SetPoint("BOTTOMRIGHT", state.canvas, "BOTTOMRIGHT", -CONST.SCROLLBAR_WIDTH - 4, CONST.FOOTER_HEIGHT)
   else
     scrollClip:SetPoint("TOPLEFT", header.row, "BOTTOMLEFT", 0, 0)
-    scrollClip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -CONST.SCROLLBAR_WIDTH - 4, CONST.FOOTER_HEIGHT)
+    scrollClip:SetPoint("BOTTOMRIGHT", state.canvas, "BOTTOMRIGHT", -CONST.SCROLLBAR_WIDTH - 4, CONST.FOOTER_HEIGHT)
   end
 end
 
@@ -4978,87 +5447,148 @@ local function VerticalWindowHeight()
     + CONST.FOOTER_HEIGHT + V.HSCROLL_HEIGHT + 12
 end
 
+function V.AnchorTopLeft()
+  if not frame then return end
+  local left, top = frame:GetLeft(), frame:GetTop()
+  if not (left and top) then return end
+  local point, rel, relPoint = frame:GetPoint(1)
+  if point == "TOPLEFT" and relPoint == "BOTTOMLEFT" and rel == UIParent and frame:GetNumPoints() == 1 then return end
+  frame:ClearAllPoints()
+  frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+end
+
+function V.StopResize()
+  local anim = state.resizeAnim
+  if not anim then return end
+  state.resizeAnim = nil
+  if state.resizeDriver then state.resizeDriver:SetScript("OnUpdate", nil) end
+  frame:SetSize(anim.toW, anim.toH)
+end
+
+function V.ResizeWindow(w, h)
+  local canvas = state.canvas
+  local anim = state.resizeAnim
+  if anim and math.abs(anim.toW - w) <= 0.5 and math.abs(anim.toH - h) <= 0.5 then return false end
+  local cw, ch = frame:GetWidth(), frame:GetHeight()
+  if not anim and math.abs(cw - w) <= 0.5 and math.abs(ch - h) <= 0.5 then
+    if canvas then canvas:SetSize(w, h) end
+    return false
+  end
+  if canvas then canvas:SetSize(w, h) end
+  if not (frame:IsShown() and state.AnimationsOn()) or state.dragging then
+    V.StopResize()
+    frame:SetSize(w, h)
+    return true
+  end
+  state.resizeAnim = { fromW = cw, fromH = ch, toW = w, toH = h, t = 0 }
+  if not state.resizeDriver then state.resizeDriver = CreateFrame("Frame") end
+  state.resizeDriver:SetScript("OnUpdate", function(_, dt)
+    local a = state.resizeAnim
+    if not a then return end
+    a.t = a.t + dt
+    local nw, nh, done = GG.Layout.SizeAt(a.fromW, a.fromH, a.toW, a.toH, a.t, GG.Layout.RESIZE_DURATION)
+    frame:SetSize(nw, nh)
+    if done then
+      state.resizeAnim = nil
+      state.resizeDriver:SetScript("OnUpdate", nil)
+    end
+  end)
+  return true
+end
+
+function V.AllRows()
+  if not state.allRows then state.allRows = GG.Roster:BuildRows() end
+  return state.allRows
+end
+GG.RosterUI.AllRows = V.AllRows
+
 AutoSizeWindow = function()
   if not frame then return end
-  local count = state.charCount or #GG.Roster:BuildRows()
-  count = math.max(1, count)
-  local charactersView = state.filterTab == "all" and not settingsOpen
   local scale = frame:GetScale()
   if not scale or scale <= 0 then scale = 1 end
   local screenW, screenH = UIParent:GetWidth() / scale, UIParent:GetHeight() / scale
-  local width, height
-  if IsVertical() then
-    local edge = 4
-    local pitch = V.ColPitch()
-    local maxCols = math.floor((screenW * 0.9 - V.SIDEBAR_WIDTH - edge) / pitch)
-    maxCols = math.max(1, math.min(GG:GetMaxShownCharacters(), maxCols))
-    local cols = math.max(math.min(count, maxCols), CONST.MIN_CHARACTER_SLOTS)
-    if not charactersView then
-      cols = math.max(cols, math.ceil((CONST.MIN_WINDOW_WIDTH - V.SIDEBAR_WIDTH - edge) / pitch))
+  local sizeRows = state.sizeRows
+  if not sizeRows then
+    sizeRows = {}
+    for _, r in ipairs(V.AllRows()) do
+      if RowMatchesFilterTab(r) then sizeRows[#sizeRows + 1] = r end
     end
-    width = V.SIDEBAR_WIDTH + cols * pitch + edge
-    height = VerticalWindowHeight()
+  end
+  local tab = settingsOpen and "settings" or state.filterTab
+  local view = state.IsAccounts() and "accounts" or (IsVertical() and "columns" or "rows")
+  local rowsChrome = 2 + CONST.TITLEBAR_HEIGHT + RailHeight() + CONST.CTX_HEIGHT
+    + CONST.HEADER_HEIGHT + CONST.FOOTER_HEIGHT
+  local spec = {
+    tab = tab, view = view, count = #sizeRows, maxShown = GG:GetMaxShownCharacters(),
+    screenW = screenW, screenH = screenH,
+  }
+  if tab == "all" and view == "columns" then
+    spec.sidebar, spec.colPitch, spec.colEdge = V.SIDEBAR_WIDTH, V.ColPitch(), 4
+    spec.columnsHeight = VerticalWindowHeight()
+  elseif tab == "all" and view == "accounts" and GG.AccountsView then
+    spec.accountsW, spec.accountsH = GG.AccountsView.Measure(sizeRows, state.AccountsAvailWidth())
+    spec.accountsGutter = CONST.SCROLLBAR_WIDTH + 4
+    spec.accountsChrome = RailHeight() + CONST.CTX_HEIGHT + CONST.FOOTER_HEIGHT
+  elseif tab == "vaultPending" then
+    local pending, claimed = 0, 0
+    for _, r in ipairs(sizeRows) do
+      if r.vault and r.vault.hasAvailableRewards then pending = pending + 1 else claimed = claimed + 1 end
+    end
+    spec.vaultPending, spec.vaultClaimed = pending, claimed
+    spec.vaultCardW, spec.vaultCardH = CONST.VAULT_CARD_WIDTH, CONST.VAULT_CARD_HEIGHT
+    spec.vaultGap, spec.vaultMargin = CONST.VAULT_CARD_GAP, CONST.VAULT_GRID_MARGIN
+    spec.vaultGutter = CONST.WINDOW_CONTENT_GUTTER
+    spec.vaultChrome = rowsChrome - CONST.HEADER_HEIGHT
+  elseif tab == "rosters" and GG.RaidRostersTab then
+    spec.contentWidth = GG.RaidRostersTab.CONTENT_WIDTH + CONST.WINDOW_CONTENT_GUTTER
+  elseif tab == "bonusRoll" and GG.BonusRollTab then
+    spec.contentWidth = GG.BonusRollTab:PreferredWidth() + CONST.WINDOW_CONTENT_GUTTER
+  elseif tab == "settings" and GG.UI and GG.UI.SettingsWindowWidth then
+    spec.settingsWidth = GG.UI:SettingsWindowWidth()
+  end
+  if tab == "settings" or (tab == "all" and view == "rows") then
+    spec.rowsWidth = TrueMinContentWidth() + CONST.WINDOW_CONTENT_GUTTER
+    spec.rowsChrome, spec.rowPitch = rowsChrome, CONST.ROW_HEIGHT + CONST.ROW_GAP
+  end
+  V.AnchorTopLeft()
+  local moveToFit = state.moveToFit
+  state.moveToFit = nil
+  local left, top = frame:GetLeft(), frame:GetTop()
+  if moveToFit then
+    spec.left, spec.top = 0, screenH
   else
-    local chrome = 2 + CONST.TITLEBAR_HEIGHT + RailHeight() + CONST.CTX_HEIGHT
-      + CONST.HEADER_HEIGHT + CONST.FOOTER_HEIGHT
-    local rowPitch = CONST.ROW_HEIGHT + CONST.ROW_GAP
-    local maxRows = math.floor((screenH * 0.85 - chrome) / rowPitch)
-    maxRows = math.max(1, math.min(GG:GetMaxShownCharacters(), maxRows))
-    width = TrueMinContentWidth() + CONST.WINDOW_CONTENT_GUTTER
-    height = chrome + math.max(math.min(count, maxRows), CONST.MIN_CHARACTER_SLOTS) * rowPitch
+    spec.left, spec.top = left, top
   end
-  if not charactersView then
-    width = math.max(width, CONST.MIN_WINDOW_WIDTH)
-    height = math.max(height, CONST.MIN_WINDOW_HEIGHT)
-  end
-  if not settingsOpen then
-    local tab, tabWidth = state.filterTab, nil
-    if tab == "raid" then
-      tabWidth = CONST.RAID_WINDOW_WIDTH
-    elseif tab == "rosters" and GG.RaidRostersTab then
-      tabWidth = GG.RaidRostersTab.CONTENT_WIDTH + CONST.WINDOW_CONTENT_GUTTER
-      height = math.max(height, CONST.ROSTERS_WINDOW_HEIGHT)
-    elseif tab == "bonusRoll" and GG.BonusRollTab then
-      tabWidth = GG.BonusRollTab:PreferredWidth() + CONST.WINDOW_CONTENT_GUTTER
-    elseif tab == "vaultPending" then
-      local pending, claimed = 0, 0
-      for _, r in ipairs(GG.Roster:BuildRows()) do
-        if RowMatchesFilterTab(r) then
-          if r.vault and r.vault.hasAvailableRewards then pending = pending + 1 else claimed = claimed + 1 end
-        end
-      end
-      local cards = math.max(3, math.min(6, math.max(pending, claimed)))
-      tabWidth = cards * (CONST.VAULT_CARD_WIDTH + CONST.VAULT_CARD_GAP) - CONST.VAULT_CARD_GAP
-        + CONST.VAULT_GRID_MARGIN * 2 + CONST.WINDOW_CONTENT_GUTTER
+  local width, height = GG.Layout.WindowSize(spec)
+  if moveToFit and left and top then
+    local nl, nt = GG.Layout.MoveInside(left, top, width, height, screenW, screenH)
+    if math.abs(nl - left) > 0.5 or math.abs(nt - top) > 0.5 then
+      frame:ClearAllPoints()
+      frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", nl, nt)
     end
-    if tabWidth then width = math.max(tabWidth, CONST.MIN_TAB_WINDOW_WIDTH) end
   end
-  if settingsOpen and GG.UI and GG.UI.SettingsWindowWidth then
-    width = GG.UI:SettingsWindowWidth() or width
-  end
-  if math.abs(frame:GetWidth() - width) > 0.5 or math.abs(frame:GetHeight() - height) > 0.5 then
-    frame:SetSize(width, height)
-    return true
-  end
-  return false
+  return V.ResizeWindow(width, height)
 end
 
 function V.MeasureSidebarWidth()
   if not (Theme and L) then return 104 end
   if not measureFS then measureFS = UIParent:CreateFontString(nil, "OVERLAY") end
   local widest = 0
+  local function Raw(text, sz, font)
+    measureFS:SetFont(font, sz, "")
+    measureFS:SetText(text)
+    return measureFS:GetStringWidth()
+  end
   local function Measure(text, size, bold, extra)
     text = text or ""
-    measureFS:SetFont(bold and Theme.fontBold or Theme.font, size, "")
-    measureFS:SetText(text)
-    local w = measureFS:GetStringWidth()
+    local w = GG.Layout.CachedWidth(Raw, text, size, bold and Theme.fontBold or Theme.font)
     if not w or w <= 0 then w = #text * size * 0.55 end
     widest = math.max(widest, w + (extra or 0))
   end
   for _, section in ipairs(verticalSections or {}) do
     if section.visible then
       if section.band then
-        Measure(L[section.band], V.TITLE_SIZE, true)
+        Measure(L[section.band]:upper(), V.TITLE_SIZE, true)
       elseif section.currencyLabels then
         local stacked = CurrencyGrid.Layouts()
         for _, group in ipairs(stacked.labels) do
@@ -5078,6 +5608,14 @@ end
 
 local function Relayout()
   V.ApplyTheme()
+  local accent = Theme.accent
+  local accentKey = accent[1] .. "," .. accent[2] .. "," .. accent[3]
+  if accentKey ~= state.paintedAccent then
+    state.paintedAccent = accentKey
+    if state.chrome then state.chrome:Paint() end
+    if state.tabSlider then state.tabSlider:Paint() end
+    if state.logoMark then state.logoMark:SetVertexColor(unpack(Theme.accent)) end
+  end
   CONST.ROW_HEIGHT = (GG.RaidRostersTab and GG.RaidRostersTab:TagsVisible())
     and CONST.ROW_HEIGHT_TAGGED or CONST.ROW_HEIGHT_BASE
   LayoutActionRail()
@@ -5090,13 +5628,18 @@ local function Relayout()
   columnLayout = ColumnLayout(bodyWidth)
   state.listBodyWidth = bodyWidth
 
-  AutoSizeWindow()
+  if AutoSizeWindow() then
+    bodyWidth = scrollClip:GetWidth()
+    columnLayout = ColumnLayout(bodyWidth)
+    state.listBodyWidth = bodyWidth
+  end
 
   PositionHeaderCells()
 
   local layoutKey = RowLayoutKey()
   if layoutKey ~= lastRowLayoutKey then
     lastRowLayoutKey = layoutKey
+    state.rowGeomKey = layoutKey
 
     EnsureVerticalWindowHeight()
     EnsureHorizontalWindowWidth()
@@ -5111,13 +5654,32 @@ local function Relayout()
     EnsureRowPoolSize(VisibleRowCount())
   end
 
-  UpdateVisibleRows()
+  UpdateVisibleRows(true)
 
-  UpdateVaultCards(false)
+  UpdateVaultCards(state.vaultRepaint == true)
+  state.vaultRepaint = nil
 
   if state.footerHint then
-    state.footerHint:SetShown(frame:GetWidth() >= state.footerHint:GetStringWidth() + 330)
+    state.footerHint:SetShown((state.canvas or frame):GetWidth() >= state.footerHint:GetStringWidth() + 330)
   end
+  state.laidOutW, state.laidOutH = scrollClip:GetWidth(), scrollClip:GetHeight()
+end
+
+function V.RefreshScreenIfResized()
+  local canvas = state.canvas
+  if not canvas then return end
+  if settingsOpen then
+    if GG.UI and GG.UI.OnRosterResized then GG.UI:OnRosterResized() end
+    return
+  end
+  local tab = state.filterTab
+  if tab ~= "raid" and tab ~= "bonusRoll" and tab ~= "rosters" then return end
+  local w = canvas:GetWidth()
+  if state.screenWidth and math.abs(state.screenWidth - w) <= 0.5 then return end
+  state.screenWidth = w
+  if tab == "raid" and GG.RaidTab then GG.RaidTab:Refresh()
+  elseif tab == "bonusRoll" and GG.BonusRollTab then GG.BonusRollTab:Refresh()
+  elseif tab == "rosters" and GG.RaidRostersTab then GG.RaidRostersTab:Refresh() end
 end
 
 local function BuildNavTabs()
@@ -5128,45 +5690,83 @@ local function BuildNavTabs()
     bonusRoll = { currency = 3418, fallback = "Interface\\Icons\\INV_Misc_Coin_01", crop = true },
     rosters = { file = "Interface\\Icons\\INV_Misc_Note_01", crop = true },
   }
+  local tabRail = CreateFrame("Frame", nil, rail)
+  tabRail:SetFrameLevel(rail:GetFrameLevel() + 1)
+  GG.Widgets.Backdrop(tabRail, { 0.039, 0.055, 0.078, 1 }, { 0.149, 0.176, 0.220, 1 }, 10)
+  tabRail:Hide()
+  state.tabRail = tabRail
   for _, def in ipairs(tabDefs) do
     local key = def.key
     local btn = CreateNavTab(rail, L[def.labelKey], icons[key])
+    btn:SetFrameLevel(rail:GetFrameLevel() + 4)
     btn:SetScript("OnClick", function() GG.RosterUI:SelectTab(key) end)
     tabButtons[key] = btn
   end
-  state.settingsTab = CreateNavTab(rail, L["OPTIONS_TITLE"], { file = "Interface\\Buttons\\UI-OptionsButton" })
-  state.settingsTab:SetScript("OnClick", function()
-    if not settingsOpen and settingsBtn then settingsBtn:Click() end
+
+  local slider = CreateFrame("Frame", nil, rail)
+  slider:SetHeight(CONST.NAV_TAB_HEIGHT - 6)
+  slider:SetFrameLevel(rail:GetFrameLevel() + 2)
+  GG.Widgets.Backdrop(slider, { 0.161, 0.188, 0.231, 1 }, { 0.235, 0.271, 0.329, 1 }, 7)
+  slider.fill = slider:CreateTexture(nil, "ARTWORK")
+  slider.fill:SetHeight(2)
+  slider.fill:SetPoint("BOTTOMLEFT", 7, 1)
+  slider.fill:SetPoint("BOTTOMRIGHT", -7, 1)
+  slider.glow = slider:CreateTexture(nil, "BACKGROUND", nil, -8)
+  slider.glow:SetTexture(Theme.media.glowHalo)
+  slider.glow:SetDesaturated(true)
+  slider.glow:SetBlendMode("ADD")
+  slider.glow:SetPoint("TOPLEFT", -14, 8)
+  slider.glow:SetPoint("BOTTOMRIGHT", 14, -10)
+  function slider:Paint()
+    self.fill:SetColorTexture(Theme.accent[1], Theme.accent[2], Theme.accent[3], 1)
+    self.glow:SetVertexColor(Theme.accent[1], Theme.accent[2], Theme.accent[3], 0.16)
+  end
+  slider:Paint()
+  slider:Hide()
+  state.tabSlider = slider
+
+  local gear = GG.Widgets.CreateIconButton(rail, 30, { texture = "Interface\\Buttons\\UI-OptionsButton", desaturate = true })
+  gear:SetFrameLevel(rail:GetFrameLevel() + 6)
+  gear:SetScript("OnClick", function()
+    if settingsBtn then settingsBtn:Click() end
   end)
+  gear:HookScript("OnEnter", function(self)
+    GG.Tip:Open(self, { family = "ui", anchor = "BOTTOMRIGHT" }, function(t) t:Text(L["SETTINGS_TOOLTIP"]) end)
+  end)
+  gear:HookScript("OnLeave", function() GameTooltip:Hide() end)
+  state.settingsTab = gear
   PaintNavTabs()
 end
 
 local function BuildContextBar()
-  local ctx = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+  local ctx = CreateFrame("Frame", nil, state.canvas, "BackdropTemplate")
   ctx:SetPoint("TOPLEFT", rail, "BOTTOMLEFT", 0, 0)
   ctx:SetPoint("TOPRIGHT", rail, "BOTTOMRIGHT", 0, 0)
   ctx:SetHeight(CONST.CTX_HEIGHT)
-  ApplyBackdrop(ctx, Theme.panel, Theme.borderSoft, 1)
-  table.insert(opacityPanels, { f = ctx, color = Theme.panel })
+  ctx.inner = CreateFrame("Frame", nil, ctx)
+  ctx.inner:SetPoint("TOPLEFT", CONST.CTX_INSET, -3)
+  ctx.inner:SetPoint("BOTTOMRIGHT", -CONST.CTX_INSET, 3)
+  ctx.fill = GG.Widgets.RoundedFill(ctx, ctx.inner, 9, "BACKGROUND")
+  ctx.fill:SetColor(Theme.level0)
+  table.insert(opacityPanels, { fill = ctx.fill, color = Theme.level0 })
   ctx.accountLabel = CreateLabel(ctx, 10, Theme.textFaint, true)
-  ctx.accountLabel:SetPoint("LEFT", 12, 0)
+  ctx.accountLabel:SetPoint("LEFT", 12 + CONST.CTX_INSET, 0)
   ctx.accountLabel:SetText(L["CTX_ACCOUNT"]:upper())
   ctx.resetText = CreateLabel(ctx, 11, Theme.textFaint)
-  ctx.resetText:SetPoint("RIGHT", -14, 0)
+  ctx.resetText:SetPoint("RIGHT", -14 - CONST.CTX_INSET, 0)
   state.ctxBar = ctx
 
   state.accountSeg = CreateSegment(ctx, function(key) GG.RosterUI:SelectAccount(key) end)
   state.layoutSeg = CreateSegment(ctx, function(key)
-    if (key == "cols") ~= IsVertical() then GG.RosterUI:ToggleLayoutMode() end
+    if key ~= state.LayoutKey() then
+      GG.RosterUI:SetLayoutMode(key == "cols" and "vertical" or key == "accounts" and "accounts" or "horizontal")
+    end
   end)
-  state.layoutSeg:SetOptions({
-    { key = "rows", label = L["LAYOUT_ROWS"], icon = "Interface\\AddOns\\GG\\Media\\ViewHorizontal64.tga" },
-    { key = "cols", label = L["LAYOUT_COLUMNS"], icon = "Interface\\AddOns\\GG\\Media\\ViewVertical64.tga" },
-  })
-  state.layoutSeg:Paint(IsVertical() and "cols" or "rows")
+  state.layoutSeg:SetOptions(state.LayoutOptions(false))
+  state.layoutSeg:Paint(state.LayoutKey())
 end
 
-CONST.ARRANGE_TOP = 32
+CONST.ARRANGE_TOP = 40
 CONST.ARRANGE_ROW = 28
 CONST.ARRANGE_GAP = 6
 CONST.ARRANGE_CHIP = 22
@@ -5609,27 +6209,37 @@ local function BuildFrame()
 
   local framePanel = GG.Widgets.ApplyPanel(frame, {
     bg = Theme.background,
+    tint = Theme.background,
     corners = "all",
     logo = true,
   })
   opacityPanels = { { panel = framePanel } }
 
-  local accentBar = frame:CreateTexture(nil, "ARTWORK")
-  accentBar:SetColorTexture(unpack(Theme.accent))
-  accentBar:SetPoint("TOPLEFT")
-  accentBar:SetPoint("TOPRIGHT")
-  accentBar:SetHeight(2)
+  state.chrome = GG.Widgets.ApplyWindowChrome(frame)
+
+  state.clipper = CreateFrame("Frame", nil, frame)
+  state.clipper:SetAllPoints(frame)
+  state.clipper:SetClipsChildren(true)
+  state.canvas = CreateFrame("Frame", nil, state.clipper)
+  state.canvas:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+  state.canvas:SetSize(frame:GetWidth(), frame:GetHeight())
 
   frame:SetScript("OnDragStart", function()
     if GGDB.options and GGDB.options.lockWindow then return end
+    V.StopResize()
+    state.dragging = true
     frame:StartMoving()
   end)
   frame:SetScript("OnDragStop", function()
     frame:StopMovingOrSizing()
+    state.dragging = false
+    V.AnchorTopLeft()
+    state.moveToFit = true
+    AutoSizeWindow()
     SaveWindowState()
   end)
 
-  frame:SetScript("OnHide", function()
+  frame:HookScript("OnHide", function()
     if state.dragEditMode then
       state.dragEditMode = false
       UpdateHeaderArrows()
@@ -5642,31 +6252,32 @@ local function BuildFrame()
     if GG.RosterUI.CloseCharactersFlyout then GG.RosterUI:CloseCharactersFlyout() end
   end)
 
-  local titlebar = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-  titlebar:SetPoint("TOPLEFT", 0, -2)
-  titlebar:SetPoint("TOPRIGHT", 0, -2)
-  titlebar:SetHeight(CONST.TITLEBAR_HEIGHT)
-  local titlebarPanel = GG.Widgets.ApplyPanel(titlebar, { bg = Theme.panel, corners = "top" })
-  table.insert(opacityPanels, { panel = titlebarPanel })
+  local titlebar = CreateFrame("Frame", nil, state.canvas)
+  titlebar:SetFrameLevel(frame:GetFrameLevel() + 8)
+  titlebar:SetPoint("TOPLEFT", 0, 0)
+  titlebar:SetPoint("TOPRIGHT", 0, 0)
+  titlebar:SetHeight(CONST.RAIL_HEIGHT)
 
   local mark = titlebar:CreateTexture(nil, "ARTWORK")
   mark:SetSize(20, 20)
-  mark:SetPoint("LEFT", 10, 0)
+  mark:SetPoint("LEFT", 12, 0)
   mark:SetTexture(Theme.media.logoIcon)
   mark:SetVertexColor(unpack(Theme.accent))
+  state.logoMark = mark
+  state.versionDot = titlebar:CreateTexture(nil, "OVERLAY")
+  state.versionDot:SetTexture(Theme.media.dot)
+  state.versionDot:SetSize(8, 8)
+  state.versionDot:SetPoint("CENTER", mark, "TOPRIGHT", -1, -1)
+  state.versionDot:SetVertexColor(unpack(Theme.success))
+  state.versionDot:Hide()
 
   local subtitleText = CreateLabel(titlebar, 11, Theme.textPrimary, true)
   subtitleText:SetText(L["ROSTER_SUBTITLE"])
   subtitleText:SetPoint("LEFT", mark, "RIGHT", 8, 0)
+  subtitleText:Hide()
 
-  local closeBtn = CreateFrame("Button", nil, titlebar)
-  closeBtn:SetSize(20, 20)
-  closeBtn:SetPoint("RIGHT", -10, 0)
-  local closeLabel = CreateLabel(closeBtn, 15, Theme.textMuted)
-  closeLabel:SetPoint("CENTER")
-  closeLabel:SetText("x")
-  closeBtn:SetScript("OnEnter", function() closeLabel:SetTextColor(unpack(Theme.textPrimary)) end)
-  closeBtn:SetScript("OnLeave", function() closeLabel:SetTextColor(unpack(Theme.textMuted)) end)
+  local closeBtn = GG.Widgets.CreateIconButton(titlebar, 30, { texture = Theme.media.close, iconSize = 14 })
+  closeBtn:SetPoint("RIGHT", -6, 0)
   closeBtn:SetScript("OnClick", function() frame:Hide() end)
 
   settingsBtn = CreateFrame("Button", nil, titlebar)
@@ -5720,7 +6331,7 @@ local function BuildFrame()
   end
 
   function RefreshLayoutButton()
-    if state.layoutSeg then state.layoutSeg:Paint(IsVertical() and "cols" or "rows") end
+    if state.layoutSeg then state.layoutSeg:Paint(state.LayoutKey()) end
     if not layoutBtn then return end
     local goingToVertical = not IsVertical()
     layoutIcon:SetTexture(goingToVertical
@@ -5756,9 +6367,13 @@ local function BuildFrame()
 
   versionText = CreateLabel(titlebar, 10, Theme.textFaint)
   layoutBtn:Hide()
-  versionText:SetPoint("RIGHT", GG.AccountSync:CreateSyncButton(titlebar, settingsBtn), "LEFT", -8, 0)
+  state.syncBtn = GG.AccountSync:CreateSyncButton(titlebar, settingsBtn)
+  versionText:SetPoint("RIGHT", state.syncBtn, "LEFT", -8, 0)
+  versionText:Hide()
   local versionHitbox = CreateFrame("Frame", nil, titlebar)
-  versionHitbox:SetAllPoints(versionText)
+  versionHitbox:SetPoint("TOPLEFT", mark, "TOPLEFT", -4, 4)
+  versionHitbox:SetPoint("BOTTOMRIGHT", mark, "BOTTOMRIGHT", 4, -4)
+  versionHitbox:EnableMouse(true)
   versionHitbox:SetScript("OnEnter", function(self)
     GG.Tip:Open(self, { family = "ui", anchor = "TOP" }, function(t)
       if GG:CompareVersions(GG.latestKnownVersion, GG.VERSION) > 0 then
@@ -5772,8 +6387,8 @@ local function BuildFrame()
   versionHitbox:SetScript("OnLeave", function() GameTooltip:Hide() end)
   GG.RosterUI:RefreshVersionBadge()
 
-  versionBanner = CreateFrame("Frame", nil, frame)
-  versionBanner:SetAllPoints(frame)
+  versionBanner = CreateFrame("Frame", nil, state.canvas)
+  versionBanner:SetAllPoints(state.canvas)
   versionBanner:EnableMouse(true)
   versionBanner:SetFrameLevel(frame:GetFrameLevel() + 90)
   local versionBannerTex = versionBanner:CreateTexture(nil, "OVERLAY")
@@ -5809,21 +6424,43 @@ local function BuildFrame()
   versionBanner.body = versionCardBody
   versionBanner:Hide()
 
-  CreateDimOverlay(titlebar)
-
-  rail = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-  rail:SetPoint("TOPLEFT", titlebar, "BOTTOMLEFT", 0, 0)
-  rail:SetPoint("TOPRIGHT", titlebar, "BOTTOMRIGHT", 0, 0)
+  rail = CreateFrame("Frame", nil, state.canvas, "BackdropTemplate")
+  rail:SetPoint("TOPLEFT", state.canvas, "TOPLEFT", 0, 0)
+  rail:SetPoint("TOPRIGHT", state.canvas, "TOPRIGHT", 0, 0)
   rail:SetHeight(CONST.RAIL_HEIGHT)
-  ApplyBackdrop(rail, CONST.NAV_BG, Theme.border, 1)
-  table.insert(opacityPanels, { f = rail, color = CONST.NAV_BG })
   BuildContextBar()
 
   BuildNavTabs()
   state.rail = rail
+  state.settingsTab:SetPoint("RIGHT", closeBtn, "LEFT", -2, 0)
+  state.syncBtn:ClearAllPoints()
+  state.syncBtn:SetPoint("RIGHT", state.settingsTab, "LEFT", -2, 0)
+  do
+  local iconRail = CreateFrame("Frame", nil, rail)
+  iconRail:SetFrameLevel(rail:GetFrameLevel() + 1)
+  iconRail:SetPoint("TOPLEFT", state.syncBtn, "TOPLEFT", -3, 3)
+  iconRail:SetPoint("BOTTOMRIGHT", closeBtn, "BOTTOMRIGHT", 3, -3)
+  GG.Widgets.Backdrop(iconRail, { 0.039, 0.055, 0.078, 1 }, { 0.149, 0.176, 0.220, 1 }, 9)
+  local paintClose = closeBtn.Paint
+  function closeBtn:Paint()
+    paintClose(self)
+    if self:IsMouseOver() then
+      self.hover:SetColor(1, 0.35, 0.35, 0.18)
+      self.icon:SetVertexColor(1, 0.70, 0.70, 1)
+    else
+      self.hover:SetColor(1, 1, 1, 0.06)
+    end
+  end
+  closeBtn:Paint()
+  end
 
   customOrderBtn = CreateFrame("Button", nil, state.ctxBar, "BackdropTemplate")
   customOrderBtn:SetHeight(24)
+  GG.Widgets.Backdrop(customOrderBtn, { Theme.accent[1], Theme.accent[2], Theme.accent[3], 0.16 },
+    { Theme.accent[1], Theme.accent[2], Theme.accent[3], 0.45 }, 7)
+  customOrderBtn.chevron = GG.Widgets.CreateChevron(customOrderBtn, 9)
+  customOrderBtn.chevron:SetPoint("RIGHT", -10, 0)
+  customOrderBtn.chevron:SetVertexColor(1, 1, 1, 0.75)
   customOrderBtn.icon = customOrderBtn:CreateTexture(nil, "ARTWORK")
   customOrderBtn.icon:SetSize(14, 14)
   customOrderBtn.icon:SetPoint("LEFT", 10, 0)
@@ -5831,7 +6468,7 @@ local function BuildFrame()
   customOrderBtn.label = CreateLabel(customOrderBtn, 11.5, Theme.textPrimary, true)
   customOrderBtn.label:SetPoint("LEFT", customOrderBtn.icon, "RIGHT", 6, 0)
   customOrderBtn.label:SetText(SortedByText())
-  ApplyBackdrop(customOrderBtn, { Theme.accent[1], Theme.accent[2], Theme.accent[3], 0.16 }, Theme.accent, 1)
+  customOrderBtn:SetBackdropColor(Theme.accent[1], Theme.accent[2], Theme.accent[3], 0.16)
   customOrderBtn:SetScript("OnEnter", function(self)
     if not state.dragEditMode then
       self:SetBackdropColor(Theme.accent[1], Theme.accent[2], Theme.accent[3], 0.32)
@@ -5875,16 +6512,59 @@ local function BuildFrame()
     end)
   end)
 
+  state.accountsSortDD = GG.Widgets.CreateDropdown(customOrderBtn, {
+    width = 120,
+    values = function()
+      return {
+        { key = "custom", label = L["ARRANGE_MY_ORDER"] },
+        { key = "ilvl", label = L["ARRANGE_ILVL"] },
+        { key = "rating", label = L["ARRANGE_RATING"] },
+        { key = "character", label = L["ARRANGE_NAME"] },
+      }
+    end,
+    get = function() return state.sortKey end,
+    set = function(key)
+      state.dragEditMode = false
+      state.sortKey = key
+      state.sortAsc = (key == "character" or key == "custom")
+      UpdateHeaderArrows()
+      UpdateSidebar()
+      scrollOffset = 0
+      RebuildDataRows()
+    end,
+  })
+  state.accountsSortDD:SetAllPoints(customOrderBtn)
+  state.accountsSortDD:SetFrameLevel(customOrderBtn:GetFrameLevel() + 2)
+  state.accountsSortDD:SetAlpha(0)
+  state.accountsSortDD:HookScript("OnEnter", function()
+    customOrderBtn:SetBackdropColor(Theme.accent[1], Theme.accent[2], Theme.accent[3], 0.32)
+  end)
+  state.accountsSortDD:HookScript("OnLeave", function()
+    customOrderBtn:SetBackdropColor(Theme.accent[1], Theme.accent[2], Theme.accent[3], 0.16)
+  end)
+  state.accountsSortDD:Hide()
+
   searchBox = CreateFrame("EditBox", nil, state.ctxBar, "BackdropTemplate")
   searchBox:SetSize(190, 24)
   searchBox:SetAutoFocus(false)
   searchBox:SetFontObject("ChatFontNormal")
   searchBox:SetFont(Theme.font, 11, "")
   searchBox:SetTextColor(unpack(Theme.textPrimary))
-  ApplyBackdrop(searchBox, { 1, 1, 1, 0.03 }, Theme.borderSoft)
-  searchBox:SetTextInsets(7, 7, 0, 0)
+  GG.Widgets.Backdrop(searchBox, { 0.039, 0.055, 0.078, 1 }, { 0.173, 0.204, 0.259, 1 }, 7)
+  searchBox.lens = searchBox:CreateTexture(nil, "ARTWORK")
+  searchBox.lens:SetSize(13, 13)
+  searchBox.lens:SetPoint("LEFT", 8, 0)
+  searchBox.lens:SetTexture("Interface\\Common\\UI-Searchbox-Icon")
+  searchBox.lens:SetVertexColor(0.6, 0.63, 0.68, 1)
+  searchBox:SetTextInsets(26, 7, 0, 0)
+  searchBox:HookScript("OnEditFocusGained", function(self)
+    self:SetBackdropBorderColor(Theme.accent[1], Theme.accent[2], Theme.accent[3], 0.7)
+  end)
+  searchBox:HookScript("OnEditFocusLost", function(self)
+    self:SetBackdropBorderColor(0.173, 0.204, 0.259, 1)
+  end)
   searchBox.placeholder = CreateLabel(searchBox, 11, Theme.textFaint)
-  searchBox.placeholder:SetPoint("LEFT", 7, 0)
+  searchBox.placeholder:SetPoint("LEFT", 26, 0)
   searchBox.placeholder:SetText(L["ROSTER_SEARCH_PLACEHOLDER"])
   searchBox:SetScript("OnTextChanged", function(self)
     local text = self:GetText()
@@ -5904,7 +6584,9 @@ local function BuildFrame()
   charactersBtn = CreateFrame("Button", nil, state.ctxBar, "BackdropTemplate")
   charactersBtn:SetPoint("RIGHT", -10, 0)
   charactersBtn:SetHeight(24)
-  ApplyBackdrop(charactersBtn, { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, 1)
+  ApplyBackdrop(charactersBtn, { 0.122, 0.145, 0.180, 1 }, { 0.208, 0.239, 0.290, 1 }, 1, 7)
+  charactersBtn.chevron = GG.Widgets.CreateChevron(charactersBtn, 9)
+  charactersBtn.chevron:SetPoint("RIGHT", -9, 0)
 
   charactersBtn.icon = charactersBtn:CreateTexture(nil, "ARTWORK")
   charactersBtn.icon:SetSize(13, 13)
@@ -5916,20 +6598,22 @@ local function BuildFrame()
 
   function charactersBtn:Sync(hovering)
     self.hiddenCount = GG:CountHiddenCharacters()
-    self:SetWidth(countLabel:GetStringWidth() + 30)
+    self:SetWidth(countLabel:GetStringWidth() + 30 + 16)
     if hovering == nil then hovering = self:IsMouseOver() end
     if hovering then
       self.icon:SetVertexColor(unpack(Theme.accent))
-      self:SetBackdropColor(0.165, 0.125, 0.251, 1)
-      self:SetBackdropBorderColor(0.427, 0.294, 0.690, 1)
+      self.chevron:SetVertexColor(1, 1, 1, 1)
+      self:SetBackdropColor(0.165, 0.192, 0.239, 1)
+      self:SetBackdropBorderColor(0.322, 0.357, 0.416, 1)
     else
       if self.hiddenCount > 0 then
         self.icon:SetVertexColor(unpack(Theme.accent))
       else
         self.icon:SetVertexColor(0.55, 0.52, 0.63)
       end
-      self:SetBackdropColor(0, 0, 0, 0)
-      self:SetBackdropBorderColor(0, 0, 0, 0)
+      self.chevron:SetVertexColor(1, 1, 1, 0.7)
+      self:SetBackdropColor(0.122, 0.145, 0.180, 1)
+      self:SetBackdropBorderColor(0.208, 0.239, 0.290, 1)
     end
   end
 
@@ -5961,16 +6645,18 @@ local function BuildFrame()
   end)
   syncHitbox:SetScript("OnLeave", function() GameTooltip:Hide() end)
   local railOverlay = CreateDimOverlay(rail)
-  local railCover = railOverlay:CreateTexture(nil, "BACKGROUND")
-  railCover:SetAllPoints()
-  railCover:SetColorTexture(CONST.NAV_BG[1], CONST.NAV_BG[2], CONST.NAV_BG[3], 1)
+  local railCover = GG.Widgets.TopBand(railOverlay, 0, Theme.cornerRadius, CONST.RAIL_HEIGHT, "BACKGROUND")
+  railCover.body:SetPoint("BOTTOMLEFT", railOverlay, "BOTTOMLEFT", 0, 0)
+  railCover.body:SetPoint("BOTTOMRIGHT", railOverlay, "BOTTOMRIGHT", 0, 0)
+  railCover:SetColor(CONST.NAV_BG[1] * 0.28, CONST.NAV_BG[2] * 0.28, CONST.NAV_BG[3] * 0.28, 1)
+  railOverlay.veil:Hide()
   local bannerLock = railOverlay:CreateTexture(nil, "OVERLAY")
   bannerLock:SetAtlas("groupfinder-icon-lock", true)
   local ICON_GAP = 8
   local bannerText = CreateLabel(railOverlay, 16, Theme.accent)
   bannerText:SetText(L["ROSTER_EDIT_POSITION_BANNER"])
   local pairWidth = bannerLock:GetWidth() + ICON_GAP + bannerText:GetStringWidth()
-  bannerLock:SetPoint("LEFT", railOverlay, "TOP", -pairWidth / 2, -17)
+  bannerLock:SetPoint("LEFT", railOverlay, "TOP", -pairWidth / 2, -CONST.RAIL_HEIGHT / 2)
   bannerText:SetPoint("LEFT", bannerLock, "RIGHT", ICON_GAP, 0)
   editBanner = railOverlay
   BuildArrangePanel(railOverlay)
@@ -5978,11 +6664,11 @@ local function BuildFrame()
   state.ctxOverlay = CreateDimOverlay(state.ctxBar)
   customOrderBtn:SetFrameLevel(state.ctxOverlay:GetFrameLevel() + 1)
 
-  header.row = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+  header.row = CreateFrame("Frame", nil, state.canvas, "BackdropTemplate")
   header.row:SetPoint("TOPLEFT", state.ctxBar, "BOTTOMLEFT", 0, 0)
   header.row:SetPoint("TOPRIGHT", state.ctxBar, "BOTTOMRIGHT", 0, 0)
   header.row:SetHeight(CONST.HEADER_HEIGHT)
-  ApplyBackdrop(header.row, Theme.panel, Theme.border, 1)
+  ApplyBackdrop(header.row, Theme.panel, { 0, 0, 0, 0 }, 1, 0)
   table.insert(opacityPanels, { f = header.row, color = Theme.panel })
 
   for _, col in ipairs(CONST.COLUMNS) do
@@ -6003,18 +6689,19 @@ local function BuildFrame()
 
   CreateDimOverlay(header.row)
 
-  sidebar = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-  ApplyBackdrop(sidebar, CONST.NAV_BG, Theme.border, 1)
+  sidebar = CreateFrame("Frame", nil, state.canvas, "BackdropTemplate")
+  ApplyBackdrop(sidebar, CONST.NAV_BG, { 0, 0, 0, 0 }, 1, 0)
   table.insert(opacityPanels, { f = sidebar, color = CONST.NAV_BG })
   sidebar:Hide()
   CreateDimOverlay(sidebar)
 
-  scrollClip = CreateFrame("Frame", nil, frame)
+  scrollClip = CreateFrame("Frame", nil, state.canvas)
   scrollClip:SetPoint("TOPLEFT", header.row, "BOTTOMLEFT", 0, 0)
-  scrollClip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -CONST.SCROLLBAR_WIDTH - 4, CONST.FOOTER_HEIGHT)
+  scrollClip:SetPoint("BOTTOMRIGHT", state.canvas, "BOTTOMRIGHT", -CONST.SCROLLBAR_WIDTH - 4, CONST.FOOTER_HEIGHT)
   scrollClip:SetClipsChildren(true)
   scrollClip:EnableMouseWheel(true)
   if GG.RaidTab then GG.RaidTab:Attach(scrollClip) end
+  if GG.AccountsView then GG.AccountsView:Attach(scrollClip) end
   if GG.BonusRollTab then GG.BonusRollTab:Attach(scrollClip) end
   if GG.RaidRostersTab then GG.RaidRostersTab:Attach(scrollClip) end
   scrollClip:SetScript("OnMouseWheel", function(_, delta)
@@ -6027,12 +6714,12 @@ local function BuildFrame()
     end
   end)
 
-  editModeBorder = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+  editModeBorder = CreateFrame("Frame", nil, state.canvas, "BackdropTemplate")
   editModeBorder:SetAllPoints(scrollClip)
   ApplyBackdrop(editModeBorder, { 0, 0, 0, 0 }, Theme.accent, 3)
   editModeBorder:Hide()
 
-  local halo = CreateFrame("Frame", nil, frame)
+  local halo = CreateFrame("Frame", nil, state.canvas)
   halo:SetFrameLevel(scrollClip:GetFrameLevel() + 30)
   local haloTop = halo:CreateTexture(nil, "OVERLAY")
   haloTop:SetHeight(1)
@@ -6052,8 +6739,8 @@ local function BuildFrame()
     haloLeft:SetHeight(math.max(1, height * 0.7))
     haloRight:SetHeight(math.max(1, height * 0.7))
   end)
-  local stems = CreateFrame("Frame", nil, frame)
-  stems:SetAllPoints(frame)
+  local stems = CreateFrame("Frame", nil, state.canvas)
+  stems:SetAllPoints(state.canvas)
   stems:SetFrameLevel(customOrderBtn:GetFrameLevel() + 60)
   local restStem = stems:CreateTexture(nil, "OVERLAY")
   local editStem = stems:CreateTexture(nil, "OVERLAY")
@@ -6082,7 +6769,7 @@ local function BuildFrame()
 
     halo:ClearAllPoints()
     halo:SetPoint("TOPLEFT", state.ctxBar, "BOTTOMLEFT", 4, -2)
-    halo:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4,
+    halo:SetPoint("BOTTOMRIGHT", state.canvas, "BOTTOMRIGHT", -4,
       CONST.FOOTER_HEIGHT + (IsVertical() and V.HSCROLL_HEIGHT or 0))
     halo:SetShown(onCharacters and centered and not editing)
     haloTop:SetColorTexture(r, g, b, 0.75)
@@ -6107,7 +6794,7 @@ local function BuildFrame()
     editStem:SetShown(onCharacters and centered and editing == true)
   end
 
-  scrollbar = CreateFrame("Slider", "GGRosterScrollBar", frame, "UIPanelScrollBarTemplate")
+  scrollbar = CreateFrame("Slider", "GGRosterScrollBar", state.canvas, "UIPanelScrollBarTemplate")
   scrollbar:SetPoint("TOPLEFT", scrollClip, "TOPRIGHT", 4, -16)
   scrollbar:SetPoint("BOTTOMLEFT", scrollClip, "BOTTOMRIGHT", 4, 16)
   scrollbar:SetScript("OnValueChanged", function(_, value)
@@ -6127,7 +6814,7 @@ local function BuildFrame()
   scrollbar:SetValue(0)
   GG.Widgets.SkinScrollbar(scrollbar)
 
-  hscrollbar = CreateFrame("Slider", "GGRosterHScrollBar", frame)
+  hscrollbar = CreateFrame("Slider", "GGRosterHScrollBar", state.canvas)
   hscrollbar:SetOrientation("HORIZONTAL")
   hscrollbar:SetHeight(V.HSCROLL_HEIGHT)
   hscrollbar:SetPoint("BOTTOMLEFT", scrollClip, "BOTTOMLEFT", 0, -V.HSCROLL_HEIGHT)
@@ -6148,7 +6835,7 @@ local function BuildFrame()
   vaultCardContainer = CreateFrame("Frame", nil, scrollClip)
   vaultCardContainer:SetPoint("TOPLEFT", scrollClip, "TOPLEFT", 0, 0)
 
-  local footer = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+  local footer = CreateFrame("Frame", nil, state.canvas, "BackdropTemplate")
   footer:SetPoint("BOTTOMLEFT", 0, 2)
   footer:SetPoint("BOTTOMRIGHT", 0, 2)
   footer:SetHeight(CONST.FOOTER_HEIGHT)
@@ -6184,17 +6871,23 @@ local function BuildFrame()
   hintText:SetPoint("RIGHT", -12, 0)
 
   CreateDimOverlay(footer)
+  footer:Hide()
 
-  frame:SetScript("OnSizeChanged", function()
+  state.canvas:SetScript("OnSizeChanged", function()
     if resizeRelayoutPending then return end
     resizeRelayoutPending = true
     C_Timer.After(0.05, function()
       resizeRelayoutPending = false
-      if frame and frame:IsShown() then Relayout() end
+      if not (frame and frame:IsShown()) then return end
+      if math.abs(scrollClip:GetWidth() - (state.laidOutW or -1)) > 0.5
+        or math.abs(scrollClip:GetHeight() - (state.laidOutH or -1)) > 0.5 then
+        Relayout()
+      end
+      V.RefreshScreenIfResized()
     end)
   end)
 
-  local function CloseSettingsView()
+  local function CloseSettingsView(tab)
     if not settingsOpen then return end
     settingsOpen = false
     PaintNavTabs()
@@ -6203,10 +6896,9 @@ local function BuildFrame()
     subtitleText:SetText(L["ROSTER_SUBTITLE"])
     rail:Show()
     scrollClip:Show()
-    footer:Show()
-    Relayout()
-    SetFilterTab("all")
+    SetFilterTab(tab or "all")
   end
+  state.closeSettings = CloseSettingsView
 
   local function OpenSettingsView()
     if settingsOpen then return end
@@ -6224,14 +6916,14 @@ local function BuildFrame()
     footer:Hide()
     gearIcon:SetVertexColor(unpack(Theme.accent))
     subtitleText:SetText(L["OPTIONS_TITLE"])
-    GG.UI:ShowSettingsPanel(frame, rail)
+    GG.UI:ShowSettingsPanel(state.canvas, rail)
   end
 
   settingsBtn:SetScript("OnClick", function()
     if settingsOpen then CloseSettingsView() else OpenSettingsView() end
   end)
 
-  frame:HookScript("OnHide", CloseSettingsView)
+  frame:HookScript("OnHide", function() CloseSettingsView() end)
 
   UpdateHeaderArrows()
   frame:Hide()
@@ -6248,11 +6940,24 @@ function GG.RosterUI:Toggle()
   else
     frame:SetScale((GGDB.options and GGDB.options.windowScale) or 1.0)
     GG.RosterUI:ApplyOpacity((GGDB.options and GGDB.options.windowOpacity) or 1.0)
+    if not state.measuredOnce then state.awaitingMeasure = true end
     GG.RosterUI:ApplyLayoutMode()
     scrollOffset = 0
     vaultScrollOffsetPx = 0
+    state.revealCurrent = true
     RebuildDataRows()
     frame:Show()
+    if not state.measuredOnce then
+      state.measuredOnce = true
+      C_Timer.After(0, function()
+        state.awaitingMeasure = nil
+        if not frame:IsShown() then return end
+        lastRowLayoutKey = nil
+        state.rowPaintKey = nil
+        if GG.AccountsView then GG.AccountsView.paintGen = (GG.AccountsView.paintGen or 0) + 1 end
+        Relayout()
+      end)
+    end
     local o = GGDB.options
     if o and o.openOn == "last" and o.lastTab and o.lastTab ~= "all" then
       GG.RosterUI:SelectTab(o.lastTab)
@@ -6286,11 +6991,13 @@ end
 function GG.RosterUI:RefreshVersionBadge()
   if not versionText then return end
   versionText:SetText(L["VERSION_LABEL"]:format(GG.VERSION))
-  if GG:CompareVersions(GG.latestKnownVersion, GG.VERSION) > 0 then
+  local newer = GG:CompareVersions(GG.latestKnownVersion, GG.VERSION) > 0
+  if newer then
     versionText:SetTextColor(unpack(Theme.accent))
   else
     versionText:SetTextColor(unpack(Theme.textFaint))
   end
+  if state.versionDot then state.versionDot:SetShown(newer) end
 end
 
 CONST.VERSION_BANNER_THROTTLE_SECONDS = 24 * 60 * 60
@@ -6725,6 +7432,12 @@ function GG.RosterUI:Relayout()
   end
 end
 
+function GG.RosterUI:ToggleClassTest()
+  state.classTest = not state.classTest
+  if frame and frame:IsShown() then RebuildDataRows() end
+  return state.classTest
+end
+
 function GG.RosterUI:OnRaidRostersChanged()
   if not frame or not frame:IsShown() then return end
   Relayout()
@@ -6745,6 +7458,23 @@ function EnsureHorizontalWindowWidth()
   AutoSizeWindow()
 end
 
+function state.AccountsAvailWidth()
+  local scale = frame and frame:GetScale() or 1
+  if not scale or scale <= 0 then scale = 1 end
+  local screenW = UIParent:GetWidth() / scale
+  local left = frame and frame:GetLeft() or nil
+  if not left then return screenW * 0.9 end
+  return math.max(400, screenW - GG.Layout.SCREEN_MARGIN - left - CONST.SCROLLBAR_WIDTH - 4)
+end
+
+function GG.RosterUI:SetLayoutMode(mode)
+  GGDB.options = GGDB.options or {}
+  if mode ~= "vertical" and mode ~= "accounts" then mode = "horizontal" end
+  if GGDB.options.layoutMode == mode then return end
+  GGDB.options.layoutMode = mode
+  self:ApplyLayoutMode()
+end
+
 function GG.RosterUI:ToggleLayoutMode()
   GGDB.options = GGDB.options or {}
   GGDB.options.layoutMode = IsVertical() and "horizontal" or "vertical"
@@ -6756,10 +7486,9 @@ function GG.RosterUI:ApplyLayoutMode()
   if not frame then return end
 
   scrollOffset = 0
+  state.revealCurrent = true
 
   verticalMap = RebuildVerticalSections()
-  EnsureVerticalWindowHeight()
-  EnsureHorizontalWindowWidth()
   Relayout()
   SaveWindowState()
   if GG.UI and GG.UI.OnRosterLayoutChanged then GG.UI:OnRosterLayoutChanged() end
@@ -6791,6 +7520,131 @@ function GG.RosterUI:BuildSettingsColumnsPreview(container)
   return BuildSettingsColumnsPreview(container)
 end
 
+V.themeThumbs = {}
+V.thumbQueue = {}
+PV.THUMB_SECTIONS = { character = true, ilvl = true, rating = true, vault = true, raid = true, tail = true }
+
+function V.ThemeThumbData()
+  local first = PreviewPickDatum()
+  if not first then return nil end
+  local firstKey = (first.name or "") .. "-" .. (first.realm or "")
+  local second = first
+  for _, r in ipairs(GG.Roster:BuildRows()) do
+    if ((r.name or "") .. "-" .. (r.realm or "")) ~= firstKey then second = r; break end
+  end
+  local function Ident(d) return table.concat({ d.name or "", d.realm or "", tostring(d.ilvl), tostring(d.rating), d.class or "" }, ":") end
+  return { first = first, second = second, ident = Ident(first) .. "|" .. Ident(second) }
+end
+
+function V.ThemeThumbSignature(key, w, h, data)
+  local o = GGDB and GGDB.options or {}
+  local parts = {}
+  for _, part in ipairs(GG.RosterThemes.PART_ORDER or {}) do
+    parts[#parts + 1] = tostring(type(o.themeParts) == "table" and o.themeParts[part] or "")
+  end
+  local a = Theme.accent
+  local diffs = VisibleRaidDifficulties()
+  return table.concat({ key, table.concat(parts, ","), ("%.3f,%.3f,%.3f"):format(a[1], a[2], a[3]),
+    tostring(IsSectionVisible("avatar")), tostring(IsSectionVisible("guild")), tostring(IsSectionVisible("ilvl")),
+    tostring(IsSectionVisible("rating")), tostring(IsSectionVisible("vault")), tostring(IsSectionVisible("raids")),
+    tostring(diffs[1]), data.ident, math.floor(w), math.floor(h) }, "|")
+end
+
+function V.BuildThemeThumb(key, w, h, data)
+  local holder = CreateFrame("Frame", nil, UIParent)
+  holder:SetSize(w, h)
+  holder:EnableMouse(false)
+  holder:Hide()
+  GG.Widgets.RoundedFill(holder, holder, 6, "BACKGROUND"):SetColor(Theme.level0 or Theme.background)
+  local inner = CreateFrame("Frame", nil, holder)
+  local natW, natH
+  local ok, err = pcall(function()
+    V.themeOverride = key
+    V.ApplyTheme()
+    local c1 = CreateFrame("Frame", nil, inner)
+    c1:SetPoint("TOPLEFT", inner, "TOPLEFT", 0, 0)
+    local h1 = PV.DrawColumn(c1, data.first, { isCurrent = true, only = PV.THUMB_SECTIONS })
+    local c2 = CreateFrame("Frame", nil, inner)
+    c2:SetPoint("TOPLEFT", inner, "TOPLEFT", V.ColPitch(), 0)
+    local h2 = PV.DrawColumn(c2, data.second, { isCurrent = false, only = PV.THUMB_SECTIONS, noLabels = true })
+    natW, natH = PV.COL_X + V.ColPitch() + V.COL_WIDTH + 8, math.max(h1, h2)
+  end)
+  V.themeOverride = nil
+  PV.noLabels = nil
+  V.ApplyTheme()
+  if not ok then
+    V.lastThumbError = err
+    holder:SetParent(nil)
+    return nil
+  end
+  local pad = 4
+  local scale = math.min((w - pad * 2) / natW, (h - pad * 2) / natH, 1)
+  inner:SetSize(natW, natH)
+  inner:SetScale(scale)
+  inner:SetPoint("TOPLEFT", holder, "TOPLEFT", ((w - natW * scale) / 2) / scale, -((h - natH * scale) / 2) / scale)
+  holder.natW, holder.natH, holder.scale = natW, natH, scale
+  return holder
+end
+
+function V.PlaceThumb(frame, job)
+  frame:SetParent(job.card)
+  frame:ClearAllPoints()
+  frame:SetPoint("TOPLEFT", job.card, "TOPLEFT", job.x, -job.y)
+  frame:SetFrameLevel(job.card:GetFrameLevel() + 1)
+  frame:Show()
+end
+
+function V.PumpThemeThumbs(all)
+  repeat
+    local job = table.remove(V.thumbQueue, 1)
+    if not job then break end
+    local cached = V.themeThumbs[job.key]
+    if not (cached and cached.sig == job.sig) then
+      local frame = V.BuildThemeThumb(job.key, job.w, job.h, job.data)
+      if cached and cached.frame then cached.frame:Hide() end
+      cached = frame and { sig = job.sig, frame = frame } or nil
+      V.themeThumbs[job.key] = cached
+    end
+    if cached then V.PlaceThumb(cached.frame, job) elseif job.onFail then job.onFail() end
+  until not all
+  if #V.thumbQueue > 0 and not all then
+    C_Timer.After(0, function() V.PumpThemeThumbs() end)
+  else
+    V.thumbPumping = nil
+  end
+end
+
+function GG.RosterUI:AttachThemeThumb(card, key, x, y, w, h, onFail)
+  local data = V.ThemeThumbData()
+  if not data then return false end
+  local job = { card = card, key = key, x = x, y = y, w = w, h = h, data = data, onFail = onFail }
+  job.sig = V.ThemeThumbSignature(key, w, h, data)
+  local cached = V.themeThumbs[key]
+  if cached and cached.sig == job.sig then
+    V.PlaceThumb(cached.frame, job)
+    return true
+  end
+  for i = #V.thumbQueue, 1, -1 do
+    if V.thumbQueue[i].key == key then table.remove(V.thumbQueue, i) end
+  end
+  V.thumbQueue[#V.thumbQueue + 1] = job
+  if not V.thumbPumping then
+    V.thumbPumping = true
+    C_Timer.After(0, function() V.PumpThemeThumbs() end)
+  end
+  return true
+end
+
+function GG.RosterUI:FlushThemeThumbs()
+  V.PumpThemeThumbs(true)
+end
+function GG.RosterUI.ThemeKey() return V.Theme().key end
+function GG.RosterUI.ThemeThumbsKey()
+  local data = V.ThemeThumbData()
+  return data and V.ThemeThumbSignature("", 0, 0, data) or ""
+end
+function GG.RosterUI.ThemeThumbs() return V.themeThumbs, V.lastThumbError end
+
 function GG.RosterUI:BuildSettingsBossesPreview(container)
   return BuildSettingsBossesPreview(container)
 end
@@ -6816,10 +7670,13 @@ function GG.RosterUI:ApplyOpacity(opacity)
   for _, entry in ipairs(opacityPanels) do
     if entry.panel then
       entry.panel.SetAlpha(opacity)
+    elseif entry.fill then
+      entry.fill:SetColor(entry.color[1], entry.color[2], entry.color[3], (entry.color[4] or 1) * (opacity or 1.0))
     else
       entry.f:SetBackdropColor(entry.color[1], entry.color[2], entry.color[3], opacity or 1.0)
     end
   end
+  if state.chrome then state.chrome:SetAlpha(opacity or 1.0) end
   if frame and frame:IsShown() then UpdateVisibleRows() end
 end
 
@@ -6829,3 +7686,30 @@ end
 
 BINDING_HEADER_GG = L["ADDON_TITLE"]
 BINDING_NAME_GG_TOGGLE_LAYOUT = L["LAYOUT_BINDING_NAME"]
+
+GG.RosterUI.Shared = {
+  CONST = CONST,
+  CurrencyGrid = CurrencyGrid,
+  QUEST_ICONS = QUEST_ICONS,
+  QUEST_ICON_ORDER = QUEST_ICON_ORDER,
+  QUEST_ICON_VISIBLE = QUEST_ICON_VISIBLE,
+  CreateQuestIcon = CreateQuestIcon,
+  PaintQuestSlot = function(...) return V.PaintQuestSlot(...) end,
+  RoundRosterTag = function(tag) return V.RoundRosterTag(tag) end,
+  QuestChecks = function() return V.Theme().parts.quests == "checks" end,
+  ShowVaultTooltip = ShowVaultTooltip,
+  ShowRaidTooltip = ShowRaidTooltip,
+  ShowKeystoneTooltip = ShowKeystoneTooltip,
+  ShowRatingTooltip = ShowRatingTooltip,
+  ShowBountyTooltip = ShowBountyTooltip,
+  CollectVaultTierSlots = CollectVaultTierSlots,
+  VaultSlotDisplay = VaultSlotDisplay,
+  IsRaidDifficultyVisible = IsRaidDifficultyVisible,
+  IsSectionVisible = IsSectionVisible,
+  AbbreviateDungeonName = AbbreviateDungeonName,
+  FormatIlvl = FormatIlvl,
+  FreshnessText = function(f) return V.FreshnessText(f) end,
+  FreshnessAge = function(age) return V.FreshnessAge(age) end,
+  IlvlRange = function() return state.ilvlRange end,
+  IsDragEditMode = function() return state.dragEditMode == true end,
+}

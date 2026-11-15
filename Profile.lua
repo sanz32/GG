@@ -18,11 +18,11 @@ P.SECTIONS = {
     "closeWithEsc", "openOn", "minimap", "minLevel", "accentMode", "accentColor" } },
   { key = "account", keys = { "accountLabelStyle" } },
   { key = "announcements", keys = { "announceInstanceReset", "announceKeystoneParty", "announceKeystoneGuild", "announceTexts" } },
-  { key = "popups", keys = { "popupRosterCall", "rosterCallStyle", "rosterCallSound", "popupRosterCharacter", "popupLockoutGroup", "popupLockoutInstance" } },
+  { key = "popups", keys = { "popupRosterCall", "rosterCallStyle", "rosterCallSound", "rosterCallPill", "rosterAutoInvite", "rosterAutoAccept", "popupRosterCharacter", "popupLockoutGroup", "popupLockoutInstance" } },
 }
 
 local BOOLS = { "lockWindow", "closeWithEsc", "announceInstanceReset", "announceKeystoneParty", "announceKeystoneGuild",
-  "popupRosterCall", "rosterCallSound", "popupRosterCharacter", "popupLockoutGroup", "popupLockoutInstance" }
+  "popupRosterCall", "rosterCallSound", "rosterCallPill", "rosterAutoInvite", "rosterAutoAccept", "popupRosterCharacter", "popupLockoutGroup", "popupLockoutInstance" }
 
 local ENUMS = {
   rosterCallStyle = { band = true, match = true, ring = true, card = true },

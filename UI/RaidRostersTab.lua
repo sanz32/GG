@@ -42,10 +42,8 @@ local function CreateText(parent, size, color, bold)
   return fs
 end
 
-local function SetBackdrop(f, bg, border)
-  f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
-  f:SetBackdropColor(unpack(bg))
-  f:SetBackdropBorderColor(unpack(border or Theme.borderSoft))
+local function SetBackdrop(f, bg, border, radius, edgeSize)
+  GG.Widgets.Backdrop(f, bg, border or Theme.borderSoft, radius, edgeSize)
 end
 
 local function Fade(c, a) return { c[1], c[2], c[3], a } end
@@ -110,7 +108,13 @@ function Tab.OnTagClick(tag)
   local RG = GG.RaidGroups
   if best and not Tab.IsInsideFor(best.group, e.key) then
     if RG.InRoster(e.roster.members, GG:GetCharacterKey()) then
-      if Tab.SendInvite(best.group) then print("|cff8B5CF6GG|r " .. L["RR_TAG_SENT"]:format(best.group.leader)) end
+      local path = Tab.SendInvite(best.group)
+      if path == "gg" then
+        local r = GG.RaidInvites and GG.RaidInvites:State()
+        print("|cff8B5CF6GG|r " .. L["RR_TAG_SENT_GG"]:format(r and r.inviter or best.group.leader))
+      elseif path then
+        print("|cff8B5CF6GG|r " .. L["RR_TAG_SENT"]:format(best.group.leader))
+      end
       return
     end
     Tab:OpenRoster(e.roster, best.group)
@@ -137,7 +141,7 @@ local function BuildPulse(tag)
   tag.halo = CreateFrame("Frame", nil, tag, "BackdropTemplate")
   tag.halo:SetPoint("TOPLEFT", -2, 2)
   tag.halo:SetPoint("BOTTOMRIGHT", 2, -2)
-  tag.halo:SetBackdrop({ edgeFile = WHITE, edgeSize = 2 })
+  GG.Widgets.Backdrop(tag.halo, nil, { 1, 1, 1, 1 }, (tag.big and 6 or 5) + 2, 2)
   tag.halo:EnableMouse(false)
   tag.sweepClip = CreateFrame("Frame", nil, tag)
   tag.sweepClip:SetPoint("TOPLEFT", 2, -2)
@@ -170,9 +174,10 @@ function Tab.CreateTag(parent, big)
   Theme = Theme or GG.Theme
   local tag = CreateFrame("Frame", nil, parent, "BackdropTemplate")
   tag:SetHeight(big and 22 or 18)
-  tag:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
   tag.big = big
-  tag.dot = tag:CreateTexture(nil, "ARTWORK")
+  GG.Widgets.Backdrop(tag, { 1, 1, 1, 0 }, { 1, 1, 1, 1 }, big and 6 or 5)
+  tag.dot = GG.Widgets.NewRoundTexture(tag, "ARTWORK")
+  GG.Widgets.ApplyRound(tag.dot, "RoundFill", 3)
   tag.dot:SetSize(5, 5)
   tag.dot:SetPoint("LEFT", big and 8 or 6, 0)
   tag.text = tag:CreateFontString(nil, "OVERLAY")
@@ -208,13 +213,13 @@ function Tab.PaintTag(tag, entry)
   tag.halo:SetShown(forming)
   tag.sweepClip:SetShown(forming)
   if forming then
-    tag.dot:SetColorTexture(unpack(Theme.success))
+    tag.dot:SetVertexColor(unpack(Theme.success))
     tag:SetScript("OnUpdate", PulseTag)
     PulseTag(tag)
   else
     tag:SetScript("OnUpdate", nil)
     tag:SetBackdropBorderColor(c[1], c[2], c[3], 0.55)
-    tag.dot:SetColorTexture(c[1], c[2], c[3], 1)
+    tag.dot:SetVertexColor(c[1], c[2], c[3], 1)
     tag.dot:SetAlpha(1)
   end
   tag.text:SetTextColor(c[1], c[2], c[3], 1)
@@ -263,15 +268,15 @@ end
 
 local function BuildSegment(parent, items, onPick)
   local seg = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-  SetBackdrop(seg, NAV_BG, Theme.border)
+  SetBackdrop(seg, NAV_BG, Theme.border, 6)
   seg:SetHeight(26)
   seg.buttons = {}
   seg.order = {}
   for _, item in ipairs(items) do
     local btn = CreateFrame("Button", nil, seg)
     btn:SetHeight(22)
-    btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-    btn.bg:SetAllPoints()
+    btn.bg = GG.Widgets.RoundedFill(btn, btn, 4, "BACKGROUND")
+    btn.bg:SetColor(0, 0, 0, 0)
     btn.label = CreateText(btn, 11, Theme.textMuted, true)
     btn.label:SetPoint("CENTER")
     btn.label:SetText(item.label)
@@ -296,7 +301,7 @@ local function BuildSegment(parent, items, onPick)
     seg.Layout()
     for key, btn in pairs(seg.buttons) do
       local on = key == active
-      btn.bg:SetColorTexture(unpack(on and Theme.accent or { 0, 0, 0, 0 }))
+      btn.bg:SetColor(on and Theme.accent or { 0, 0, 0, 0 })
       btn.label:SetTextColor(unpack(on and Theme.onAccent or Theme.textMuted))
     end
   end
@@ -451,8 +456,8 @@ local function EnsureChip(i)
   chip.count = CreateText(chip, 10, { 0.72, 0.64, 0.97, 1 })
   chip.live = chip:CreateTexture(nil, "OVERLAY")
   chip.live:SetHeight(2)
-  chip.live:SetPoint("BOTTOMLEFT", 1, 1)
-  chip.live:SetPoint("BOTTOMRIGHT", -1, 1)
+  chip.live:SetPoint("BOTTOMLEFT", 6, 1)
+  chip.live:SetPoint("BOTTOMRIGHT", -6, 1)
   chip.live:SetColorTexture(unpack(Theme.success))
   chip:SetScript("OnClick", function(self) state.sel, state.autoSel = self.rosterIndex, false; Tab:Refresh() end)
   list.chips[i] = chip
@@ -466,6 +471,8 @@ local function EnsureMember(i)
   if m then return m end
   m = CreateFrame("Frame", nil, list.right, "BackdropTemplate")
   m:SetHeight(MEMBER_H - 2)
+  GG.Widgets.Backdrop(m, { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, 6)
+  m:SetBackdrop(nil)
   m.num = CreateText(m, 10, Theme.textFaint)
   m.num:SetPoint("RIGHT", m, "LEFT", 26, 0)
   m.num:SetJustifyH("RIGHT")
@@ -528,7 +535,7 @@ local function PaintInvite(inv, mode)
     if mode == "sent" then
       inv.icon:SetPoint("LEFT", inv.name, "RIGHT", 6, 0)
       inv.text:SetPoint("LEFT", inv.icon, "RIGHT", 4, 0)
-      inv.text:SetText(L["RG_SENT"])
+      inv.text:SetText(inv.sentPath == "gg" and L["RG_SENT_GG"] or L["RG_SENT"])
     else
       inv.text:SetPoint("LEFT", inv.name, "RIGHT", 8, 0)
       inv.text:SetText(L["RG_INSIDE"])
@@ -562,6 +569,8 @@ local function BuildBanner(parent)
 
   local inv = CreateFrame("Button", nil, b, "BackdropTemplate")
   inv:SetHeight(28)
+  GG.Widgets.Backdrop(inv, Fade(Theme.panel, 1), Theme.border, 6)
+  inv:SetBackdrop(nil)
   inv:SetPoint("LEFT", b.leaderLabel, "RIGHT", 8, 0)
   inv.name = CreateText(inv, 13, Theme.textPrimary, true)
   inv.text = CreateText(inv, 12, Theme.textPrimary, true)
@@ -578,9 +587,11 @@ local function BuildBanner(parent)
     self.hover = true
     PaintInvite(self, self.mode)
     local leader = self.group and self.group.leader or ""
+    local path, inviter = "whisper", nil
+    if GG.RaidInvites and self.group then path, inviter = GG.RaidInvites:PlanFor(self.group) end
     GG.Tip:Open(self, { family = "roster", anchor = "BOTTOM" }, function(t)
       t:Title(L["RG_TIP_INVITE_TITLE"])
-      t:Text(L["RG_TIP_INVITE"]:format(leader))
+      if path == "gg" then t:Text(L["RG_TIP_INVITE_GG"]:format(inviter)) else t:Text(L["RG_TIP_INVITE"]:format(leader)) end
     end)
   end)
   inv:SetScript("OnLeave", function(self)
@@ -629,11 +640,12 @@ function Tab.AskInvite(g, rosterLabel, inRoster)
 end
 
 function Tab.SendInvite(g)
-  if GG.RaidGroups:RequestInvite(g) then
-    state.sent = { key = g.leaderKey, untilT = GetTime() + 4 }
+  local path = GG.RaidGroups:RequestInvite(g)
+  if path then
+    state.sent = { key = g.leaderKey, untilT = GetTime() + 4, path = path }
     C_Timer.After(4.1, function() Tab:RefreshIfShown() end)
     Tab:Refresh()
-    return true
+    return path
   elseif GG.IsChatRestricted and GG:IsChatRestricted() then
     print("|cff8B5CF6GG|r " .. L["RG_CHAT_BLOCKED"])
   end
@@ -659,6 +671,7 @@ local function PaintBanner(best, roster, width, y, lookup, alts)
   inv.name:SetText(g.leader)
   inv.name:SetTextColor(unpack(ClassColor(lookup(g.leader).class)))
   local sent = state.sent and state.sent.key == g.leaderKey and GetTime() < state.sent.untilT
+  inv.sentPath = sent and state.sent.path or nil
   PaintInvite(inv, GG.RaidGroups:IsInside(g) and "inside" or sent and "sent" or "invite")
 
   local out = b.outside
@@ -1156,11 +1169,12 @@ end
 local function BuildStat(parent, labelKey, color)
   local box = CreateFrame("Frame", nil, parent, "BackdropTemplate")
   box:SetSize(118, 48)
-  SetBackdrop(box, Fade(Theme.panel, 1), Theme.border)
-  local bar = box:CreateTexture(nil, "ARTWORK")
-  bar:SetColorTexture(unpack(color))
-  bar:SetPoint("TOPLEFT")
-  bar:SetPoint("BOTTOMLEFT")
+  SetBackdrop(box, Fade(Theme.panel, 1), Theme.border, 8)
+  local bar = GG.Widgets.NewRoundTexture(box, "ARTWORK")
+  GG.Widgets.ApplyRound(bar, "RoundFill", 2)
+  bar:SetVertexColor(color[1], color[2], color[3], color[4] or 1)
+  bar:SetPoint("TOPLEFT", 2, -7)
+  bar:SetPoint("BOTTOMLEFT", 2, 7)
   bar:SetWidth(3)
   box.value = CreateText(box, 20, color, true)
   box.value:SetPoint("TOPLEFT", 12, -6)

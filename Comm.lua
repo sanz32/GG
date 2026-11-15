@@ -14,6 +14,8 @@ local SYNC_COMM_PREFIX = "GGv1s"
 
 local ROSTER_COMM_PREFIX = "GGv1r"
 
+local INVITE_COMM_PREFIX = "GGv1i"
+
 local BROADCAST_MIN_INTERVAL_SECONDS = 15
 local BROADCAST_DEBOUNCE_SECONDS = 1
 
@@ -313,11 +315,34 @@ local REQUEST_TIMEOUT_AFTER_SECONDS = 10
 
 local pendingCardRequests = {}
 
-local function SendPayload(prefix, payload, distribution, target, priority)
+local function SendPayload(prefix, payload, distribution, target, priority, callbackFn)
   local serialized = LibSerialize:Serialize(payload)
   local compressed = LibDeflate:CompressDeflate(serialized)
   local encoded = LibDeflate:EncodeForWoWAddonChannel(compressed)
-  GG:SendCommMessage(prefix, encoded, distribution, target, priority)
+  GG:SendCommMessage(prefix, encoded, distribution, target, priority, callbackFn)
+end
+
+local function AddonSendOk(result)
+  if result == nil or result == true then return true end
+  if result == false then return false end
+  local enum = Enum and Enum.SendAddonMessageResult
+  if type(enum) == "table" and enum.Success ~= nil then return result == enum.Success end
+  return result == 0
+end
+
+function GG:SendInvitePayload(payload, onSent)
+  if not IsInGuild() then return false end
+  local done = false
+  local callback = onSent and function(_, sent, total, result)
+    if done then return end
+    local ok = AddonSendOk(result)
+    if not ok or (type(sent) == "number" and type(total) == "number" and sent >= total) then
+      done = true
+      onSent(ok)
+    end
+  end
+  SendPayload(INVITE_COMM_PREFIX, payload, "GUILD", nil, "ALERT", callback)
+  return true
 end
 
 function GG:SendRosterPayload(payload, priority)
@@ -433,7 +458,7 @@ end
 
 function GG:OnCommReceived(prefix, message, distribution, sender)
   if prefix ~= COMM_PREFIX and prefix ~= CARD_COMM_PREFIX and prefix ~= LOCKOUT_COMM_PREFIX
-    and prefix ~= SYNC_COMM_PREFIX and prefix ~= ROSTER_COMM_PREFIX then return end
+    and prefix ~= SYNC_COMM_PREFIX and prefix ~= ROSTER_COMM_PREFIX and prefix ~= INVITE_COMM_PREFIX then return end
 
   local decoded = LibDeflate:DecodeForWoWAddonChannel(message)
   if not decoded then return end
@@ -445,6 +470,11 @@ function GG:OnCommReceived(prefix, message, distribution, sender)
 
   if prefix == ROSTER_COMM_PREFIX then
     if GG.RaidRosters then GG.RaidRosters:OnMessage(payload, distribution, sender) end
+    return
+  end
+
+  if prefix == INVITE_COMM_PREFIX then
+    if GG.RaidInvites then GG.RaidInvites:OnMessage(payload, distribution, sender) end
     return
   end
 
@@ -689,3 +719,4 @@ GG:RegisterComm(CARD_COMM_PREFIX)
 GG:RegisterComm(LOCKOUT_COMM_PREFIX)
 GG:RegisterComm(SYNC_COMM_PREFIX)
 GG:RegisterComm(ROSTER_COMM_PREFIX)
+GG:RegisterComm(INVITE_COMM_PREFIX)

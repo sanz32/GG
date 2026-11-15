@@ -4,14 +4,8 @@ local L = LibStub("AceLocale-3.0"):GetLocale("GG")
 local Theme = GG.Theme
 local Widgets = GG.Widgets
 
-local function ApplyBackdrop(f, bg, border, edgeSize)
-  f:SetBackdrop({
-    bgFile = "Interface\\Buttons\\WHITE8x8",
-    edgeFile = "Interface\\Buttons\\WHITE8x8",
-    edgeSize = edgeSize or 1,
-  })
-  f:SetBackdropColor(unpack(bg))
-  if border then f:SetBackdropBorderColor(unpack(border)) end
+local function ApplyBackdrop(f, bg, border, edgeSize, radius)
+  Widgets.Backdrop(f, bg, border or { 1, 1, 1, 1 }, radius, edgeSize)
 end
 
 local function CreateLabel(parent, size, color, bold)
@@ -46,6 +40,7 @@ local sidebarButtons = {}
 local activeCategory
 local scrollOffset = 0
 local activePreviewRefresh
+local built = { pages = {}, previews = {} }
 
 local UpdateScrollBounds
 local ClearContent
@@ -103,28 +98,15 @@ local function AddToggleChip(container, x, y, width, field)
   chip:SetSize(width, CHIP_HEIGHT)
   chip:SetPoint("TOPLEFT", x, -y)
 
-  local bg = chip:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints()
-  bg:SetColorTexture(1, 1, 1, 1)
-  local edges = {}
-  for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
-    local line = chip:CreateTexture(nil, "BORDER")
-    if side == "TOP" or side == "BOTTOM" then
-      line:SetPoint(side .. "LEFT"); line:SetPoint(side .. "RIGHT"); line:SetHeight(1)
-    else
-      line:SetPoint("TOP" .. side); line:SetPoint("BOTTOM" .. side); line:SetWidth(1)
-    end
-    edges[#edges + 1] = line
-  end
+  Widgets.Backdrop(chip, { 1, 1, 1, 0.03 }, Theme.border, 6)
   local function PaintChip(on)
     local a = Theme.accent
     if on then
-      bg:SetGradient("HORIZONTAL", CreateColor(a[1], a[2], a[3], 0.20), CreateColor(a[1], a[2], a[3], 0.03))
+      chip:SetBackdropColor(a[1], a[2], a[3], 0.12)
+      chip:SetBackdropBorderColor(a[1], a[2], a[3], 0.6)
     else
-      bg:SetGradient("HORIZONTAL", CreateColor(1, 1, 1, 0.03), CreateColor(1, 1, 1, 0.03))
-    end
-    for _, line in ipairs(edges) do
-      if on then line:SetColorTexture(a[1], a[2], a[3], 0.6) else line:SetColorTexture(unpack(Theme.border)) end
+      chip:SetBackdropColor(1, 1, 1, 0.03)
+      chip:SetBackdropBorderColor(unpack(Theme.border))
     end
   end
   PaintChip(field.get())
@@ -161,9 +143,8 @@ local function AddExpanderRow(container, y, width, field)
   btn:SetSize(width, EXPANDER_HEIGHT)
   btn:SetPoint("TOPLEFT", 0, -y)
 
-  local bg = btn:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints()
-  bg:SetColorTexture(1, 1, 1, 0.05)
+  local bg = Widgets.RoundedFill(btn, btn, 6, "BACKGROUND")
+  bg:SetColor(1, 1, 1, 0.05)
 
   local arrow = CreateLabel(btn, 10, Theme.textFaint, true)
   arrow:SetPoint("LEFT", CHIP_PADDING, 0)
@@ -177,8 +158,8 @@ local function AddExpanderRow(container, y, width, field)
   count:SetPoint("RIGHT", -CHIP_PADDING, 0)
   count:SetText(field.countText or "")
 
-  btn:SetScript("OnEnter", function() bg:SetColorTexture(1, 1, 1, 0.09) end)
-  btn:SetScript("OnLeave", function() bg:SetColorTexture(1, 1, 1, 0.05) end)
+  btn:SetScript("OnEnter", function() bg:SetColor(1, 1, 1, 0.09) end)
+  btn:SetScript("OnLeave", function() bg:SetColor(1, 1, 1, 0.05) end)
   btn:SetScript("OnClick", function()
     if field.onToggle then field.onToggle() end
   end)
@@ -244,10 +225,34 @@ local function AddSliderRow(container, y, width, field)
   return height
 end
 
+local function AddTipMark(container, anchor, field)
+  if not (field.tip and field.desc and field.desc ~= "") then return false end
+  local mark = CreateFrame("Button", nil, container)
+  mark:SetSize(16, 16)
+  mark:SetPoint("LEFT", anchor, "RIGHT", 6, 0)
+  local bg = Widgets.RoundedFill(mark, mark, 8, "BACKGROUND")
+  bg:SetColor(1, 1, 1, 0.08)
+  local glyph = CreateLabel(mark, 10.5, Theme.textMuted, true)
+  glyph:SetPoint("CENTER", 0, 0)
+  glyph:SetText("?")
+  mark:SetScript("OnEnter", function(self)
+    bg:SetColor(1, 1, 1, 0.16)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(field.desc, 1, 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  mark:SetScript("OnLeave", function()
+    bg:SetColor(1, 1, 1, 0.08)
+    GameTooltip:Hide()
+  end)
+  return true
+end
+
 local function AddDropdownRow(container, y, width, field)
   local label = CreateLabel(container, 12, Theme.textPrimary, true)
   label:SetPoint("TOPLEFT", 0, -y)
   label:SetText(field.label)
+  local tipped = AddTipMark(container, label, field)
 
   local dropdown = Widgets.CreateDropdown(container, {
     values = field.values,
@@ -258,7 +263,7 @@ local function AddDropdownRow(container, y, width, field)
   dropdown:SetPoint("TOPLEFT", 0, -y - 20)
 
   local height = 20 + 24
-  if field.desc and field.desc ~= "" then
+  if not tipped and field.desc and field.desc ~= "" then
     local desc = CreateLabel(container, 11, Theme.textFaint)
     desc:SetWordWrap(true)
     desc:SetWidth(width)
@@ -280,9 +285,10 @@ local function AddInfoButtonRow(container, y, width, field)
   local button = Widgets.CreateButton(container, field.buttonText, field.onClick)
   button:SetPoint("TOPLEFT", 0, -y - labelHeight - 6)
   if field.disabled then button:SetDisabled(field.disabled()) end
+  local tipped = AddTipMark(container, button, field)
 
   local height = labelHeight + 6 + 24
-  if field.desc and field.desc ~= "" then
+  if not tipped and field.desc and field.desc ~= "" then
     local desc = CreateLabel(container, 11, Theme.textFaint)
     desc:SetWordWrap(true)
     desc:SetWidth(width)
@@ -297,9 +303,10 @@ local function AddTextboxRow(container, y, width, field)
   local label = CreateLabel(container, 12, Theme.textPrimary, true)
   label:SetPoint("TOPLEFT", 0, -y)
   label:SetText(field.label)
+  local tipped = AddTipMark(container, label, field)
 
   local descHeight = 0
-  if field.desc and field.desc ~= "" then
+  if not tipped and field.desc and field.desc ~= "" then
     local desc = CreateLabel(container, 11, Theme.textFaint)
     desc:SetWordWrap(true)
     desc:SetWidth(width)
@@ -376,20 +383,7 @@ local function AddBossStyleRow(container, y, width, field)
     card:SetSize(cardW, STYLE_CARD_H)
     card:SetPoint("TOPLEFT", col * (cardW + STYLE_CARD_GAP), -(y + row * (STYLE_CARD_H + STYLE_CARD_GAP)))
 
-    local bg = card:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(1, 1, 1, selected and 0.07 or 0.035)
-    local border = {}
-    for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
-      local line = card:CreateTexture(nil, "BORDER")
-      line:SetColorTexture(unpack(selected and Theme.accent or Theme.borderSoft))
-      if side == "TOP" or side == "BOTTOM" then
-        line:SetPoint(side .. "LEFT"); line:SetPoint(side .. "RIGHT"); line:SetHeight(selected and 2 or 1)
-      else
-        line:SetPoint("TOP" .. side); line:SetPoint("BOTTOM" .. side); line:SetWidth(selected and 2 or 1)
-      end
-      table.insert(border, line)
-    end
+    Widgets.Backdrop(card, { 1, 1, 1, selected and 0.07 or 0.035 }, selected and Theme.accent or Theme.borderSoft, 8, selected and 2 or 1)
 
     local label = CreateLabel(card, 12, selected and Theme.textPrimary or Theme.textMuted, true)
     label:SetPoint("TOPLEFT", 10, -8)
@@ -410,8 +404,8 @@ local function AddBossStyleRow(container, y, width, field)
         i, GG.BossIcons:LetterForSlot(i), style.key)
     end
 
-    card:SetScript("OnEnter", function() if not selected then bg:SetColorTexture(1, 1, 1, 0.06) end end)
-    card:SetScript("OnLeave", function() if not selected then bg:SetColorTexture(1, 1, 1, 0.035) end end)
+    card:SetScript("OnEnter", function(self) if not selected then self:SetBackdropColor(1, 1, 1, 0.06) end end)
+    card:SetScript("OnLeave", function(self) if not selected then self:SetBackdropColor(1, 1, 1, 0.035) end end)
     card:SetScript("OnClick", function()
       if selected then return end
       field.set(style.key)
@@ -528,18 +522,7 @@ local function AddRosterCallStyleRow(container, y, width, field)
     card:SetSize(cardW, CALL_CARD.H)
     card:SetPoint("TOPLEFT", col * (cardW + gap), -(top + row * (CALL_CARD.H + gap)))
 
-    local bg = card:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(1, 1, 1, selected and 0.07 or 0.035)
-    for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
-      local line = card:CreateTexture(nil, "BORDER")
-      line:SetColorTexture(unpack(selected and Theme.accent or Theme.borderSoft))
-      if side == "TOP" or side == "BOTTOM" then
-        line:SetPoint(side .. "LEFT"); line:SetPoint(side .. "RIGHT"); line:SetHeight(selected and 2 or 1)
-      else
-        line:SetPoint("TOP" .. side); line:SetPoint("BOTTOM" .. side); line:SetWidth(selected and 2 or 1)
-      end
-    end
+    Widgets.Backdrop(card, { 1, 1, 1, selected and 0.07 or 0.035 }, selected and Theme.accent or Theme.borderSoft, 8, selected and 2 or 1)
 
     local name = CreateLabel(card, 12, selected and Theme.textPrimary or Theme.textMuted, true)
     name:SetPoint("TOPLEFT", 8, -7)
@@ -547,8 +530,8 @@ local function AddRosterCallStyleRow(container, y, width, field)
 
     PaintRosterCallPreview(card, style.key, 8, 26, cardW - 16, CALL_CARD.PREVIEW_H)
 
-    card:SetScript("OnEnter", function() if not selected then bg:SetColorTexture(1, 1, 1, 0.06) end end)
-    card:SetScript("OnLeave", function() if not selected then bg:SetColorTexture(1, 1, 1, 0.035) end end)
+    card:SetScript("OnEnter", function(self) if not selected then self:SetBackdropColor(1, 1, 1, 0.06) end end)
+    card:SetScript("OnLeave", function(self) if not selected then self:SetBackdropColor(1, 1, 1, 0.035) end end)
     card:SetScript("OnClick", function()
       if selected then return end
       field.set(style.key)
@@ -560,7 +543,82 @@ local function AddRosterCallStyleRow(container, y, width, field)
   return (top - y) + rows * CALL_CARD.H + (rows - 1) * gap
 end
 
-local THEME_CARD = { MIN_W = 200, H = 66, GAP = 10 }
+local THEME_CARD = { MIN_W = 220, H = 196, GAP = 10, THUMB_H = 158 }
+
+local function ThemeThumb(card, key, x, y, w, h)
+  local RT = GG.RosterThemes
+  local t = RT.THEMES[key] or {}
+  local classes = { { 1, 0.49, 0.04 }, { 0.25, 0.78, 0.92 }, { 0.92, 0.92, 0.95 } }
+  local a = Theme.accent
+  local function Rect(px, py, pw, ph, c, alpha, layer)
+    local r = card:CreateTexture(nil, layer or "ARTWORK")
+    r:SetColorTexture(c[1], c[2], c[3], alpha or c[4] or 1)
+    r:SetPoint("TOPLEFT", x + px, -(y + py))
+    r:SetSize(math.max(1, pw), math.max(1, ph))
+    return r
+  end
+  Rect(0, 0, w, h, Theme.level0 or { 0.067, 0.075, 0.094, 1 }, 1, "BACKGROUND")
+  local gap = (t.colGap and t.colGap > 0) and 3 or 0
+  local colW = (w - 8 - 2 * gap) / 3
+  local gray = { 0.23, 0.25, 0.30 }
+  for i, cc in ipairs(classes) do
+    local cx = 4 + (i - 1) * (colW + gap)
+    local top, bottom = 4, h - 4
+    if t.cell or t.banner then
+      Rect(cx, top, colW, bottom - top, t.cell or { 0.1, 0.11, 0.14 }, nil, "BORDER")
+    end
+    if t.headTint or t.banner or key == "cards" then
+      local band = Rect(cx, top, colW, 12, cc, 1, "BORDER")
+      if CreateColor then band:SetGradient("VERTICAL", CreateColor(cc[1], cc[2], cc[3], 0), CreateColor(cc[1], cc[2], cc[3], 0.45)) end
+    end
+    if t.banner then
+      Rect(cx, top, 2, bottom - top, cc, 0.9)
+    end
+    if t.compactHeader then
+      Rect(cx + 4, top + 3, 8, 8, cc, 0.8)
+      Rect(cx + 15, top + 4, colW - 22, 2, cc, 0.9)
+      Rect(cx + 15, top + 8, colW - 30, 2, gray, 1)
+    else
+      Rect(cx + colW / 2 - 9, top + 4, 18, 2, cc, 1)
+    end
+    local gauge = t.parts and t.parts.nums == "gauge"
+    for k = 0, 1 do
+      local ry = top + 18 + k * 7
+      if t.heat then
+        Rect(cx + 2, ry - 2, colW - 4, 6, a, 0.10 + 0.08 * ((i + k) % 3))
+      end
+      Rect(cx + colW / 2 - 7, ry, 14, 2, k == 0 and { 0.72, 0.47, 1 } or Theme.textMuted, 1)
+      if gauge then
+        Rect(cx + 6, ry + 3, colW - 12, 1, gray, 1)
+        Rect(cx + 6, ry + 3, (colW - 12) * (0.9 - 0.2 * i / 3), 1, k == 0 and a or Theme.gold, 1)
+      end
+    end
+    local by = top + 34
+    if t.parts and t.parts.bosses == "bar" then
+      Rect(cx + 6, by, colW - 12, 3, gray, 1)
+      Rect(cx + 6, by, (colW - 12) * (0.4 + 0.15 * i), 3, { 1, 0.5, 0 }, 1)
+    else
+      for s = 0, 4 do Rect(cx + 6 + s * ((colW - 12) / 5), by, 3, 3, s < i + 1 and { 1, 0.5, 0 } or gray, 1) end
+    end
+  end
+  local sep = t.separator
+  if sep == "full" or sep == "block" then
+    Rect(2, 15, w - 4, 1, t.rule or gray, sep == "block" and 0.6 or 1)
+  elseif sep == "inset" then
+    for i = 1, 3 do Rect(4 + (i - 1) * (colW + gap) + 4, 15, colW - 8, 1, t.rule or gray, 1) end
+  elseif sep == "gold" then
+    for i = 1, 3 do Rect(4 + (i - 1) * (colW + gap) + 4, 15, colW - 8, 1, Theme.gold, 0.4) end
+  elseif sep == "glow" then
+    local glow = Rect(2, 14, w - 4, 3, a, 0.8)
+    glow:SetBlendMode("ADD")
+  end
+  if t.spineWidth then
+    Rect(1, 4, 2, h - 8, a, 0.9)
+  end
+  if t.banner then
+    Rect(0, 1, w, 2, t.pole or { 0.36, 0.29, 0.21 }, 1)
+  end
+end
 
 local function AddThemePickerRow(container, y, width, field)
   local RT = GG.RosterThemes
@@ -571,6 +629,7 @@ local function AddThemePickerRow(container, y, width, field)
   if cols < count then cols = math.ceil(count / math.ceil(count / cols)) end
   local cardW = math.floor((width - (cols - 1) * gap) / cols)
   local a = Theme.accent
+  local currentTheme
 
   for index, key in ipairs(RT.ORDER) do
     local theme = RT.THEMES[key]
@@ -578,52 +637,48 @@ local function AddThemePickerRow(container, y, width, field)
     local row = math.floor((index - 1) / cols)
     local selected = key == current
     local available = theme.implemented == true
+    if selected then currentTheme = theme end
 
     local card = CreateFrame("Button", nil, container)
     card:SetSize(cardW, THEME_CARD.H)
     card:SetPoint("TOPLEFT", col * (cardW + gap), -(y + row * (THEME_CARD.H + gap)))
 
-    local bg = card:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
+    Widgets.Backdrop(card, { 1, 1, 1, 0.035 }, selected and Theme.accent or Theme.borderSoft, 9, selected and 2 or 1)
     local function PaintBg(hover)
       if selected then
-        bg:SetColorTexture(a[1], a[2], a[3], 0.10)
+        card:SetBackdropColor(a[1], a[2], a[3], 0.10)
       else
-        bg:SetColorTexture(1, 1, 1, hover and 0.06 or 0.035)
+        card:SetBackdropColor(1, 1, 1, hover and 0.06 or 0.035)
       end
     end
     PaintBg(false)
-    for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
-      local line = card:CreateTexture(nil, "BORDER")
-      line:SetColorTexture(unpack(selected and Theme.accent or Theme.borderSoft))
-      if side == "TOP" or side == "BOTTOM" then
-        line:SetPoint(side .. "LEFT"); line:SetPoint(side .. "RIGHT"); line:SetHeight(selected and 2 or 1)
-      else
-        line:SetPoint("TOP" .. side); line:SetPoint("BOTTOM" .. side); line:SetWidth(selected and 2 or 1)
-      end
+
+    local thumbW, thumbH = cardW - 16, THEME_CARD.THUMB_H
+    local function Schematic() ThemeThumb(card, key, 8, 8, thumbW, thumbH) end
+    if not (GG.RosterUI and GG.RosterUI.AttachThemeThumb
+        and GG.RosterUI:AttachThemeThumb(card, key, 8, 8, thumbW, thumbH, Schematic)) then
+      Schematic()
     end
 
     local name = CreateLabel(card, 13, selected and Theme.textPrimary or Theme.textMuted, true)
-    name:SetPoint("TOPLEFT", 12, -10)
+    name:SetPoint("TOPLEFT", 10, -(8 + THEME_CARD.THUMB_H + 9))
     name:SetText(("%d · %s"):format(index, L[theme.labelKey]))
-
-    local blurb = CreateLabel(card, 11, Theme.textFaint)
-    blurb:SetWordWrap(true)
-    if blurb.SetMaxLines then blurb:SetMaxLines(2) end
-    blurb:SetJustifyV("TOP")
-    blurb:SetWidth(cardW - 24)
-    blurb:SetPoint("TOPLEFT", 12, -30)
-    blurb:SetText(L[theme.descKey])
 
     if not available then
       card:SetAlpha(0.55)
       local soon = CreateLabel(card, 10, Theme.gold, true)
-      soon:SetPoint("TOPRIGHT", -10, -12)
+      soon:SetPoint("TOPRIGHT", -10, -(8 + THEME_CARD.THUMB_H + 10))
       soon:SetText(L["THEME_SOON"])
     end
 
-    card:SetScript("OnEnter", function() if not selected and available then PaintBg(true) end end)
-    card:SetScript("OnLeave", function() PaintBg(false) end)
+    card:SetScript("OnEnter", function(self)
+      if not selected and available then PaintBg(true) end
+      GG.Tip:Open(self, { family = "ui", anchor = "TOP" }, function(t) t:Text(L[theme.descKey]) end)
+    end)
+    card:SetScript("OnLeave", function()
+      PaintBg(false)
+      GameTooltip:Hide()
+    end)
     card:SetScript("OnClick", function()
       if selected or not available then return end
       field.set(key)
@@ -632,22 +687,21 @@ local function AddThemePickerRow(container, y, width, field)
   end
 
   local rows = math.ceil(count / cols)
-  return rows * THEME_CARD.H + (rows - 1) * gap
+  local height = rows * THEME_CARD.H + (rows - 1) * gap
+  if currentTheme then
+    local desc = CreateLabel(container, 12, Theme.textFaint)
+    desc:SetWordWrap(true)
+    desc:SetWidth(width)
+    desc:SetJustifyV("TOP")
+    desc:SetPoint("TOPLEFT", 0, -(y + height + 10))
+    desc:SetText(("%s — %s"):format(L[currentTheme.labelKey], L[currentTheme.descKey]))
+    height = height + 10 + 32
+  end
+  return height
 end
 
 local function FlatBox(frame, bg, border)
-  local fill = frame:CreateTexture(nil, "BACKGROUND")
-  fill:SetAllPoints()
-  fill:SetColorTexture(unpack(bg))
-  for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
-    local line = frame:CreateTexture(nil, "BORDER")
-    line:SetColorTexture(unpack(border))
-    if side == "TOP" or side == "BOTTOM" then
-      line:SetPoint(side .. "LEFT"); line:SetPoint(side .. "RIGHT"); line:SetHeight(1)
-    else
-      line:SetPoint("TOP" .. side); line:SetPoint("BOTTOM" .. side); line:SetWidth(1)
-    end
-  end
+  Widgets.Backdrop(frame, bg, border, 6)
 end
 
 local function AddRowDesc(container, y, width, field, top)
@@ -675,7 +729,7 @@ local function AddSegmentedRow(container, y, width, field)
     for _, b in ipairs(buttons) do
       local active = b.key == key
       b.active = active
-      b.bg:SetColorTexture(unpack(active and Theme.accent or { 0, 0, 0, 0 }))
+      b.bg:SetColor(active and Theme.accent or { 0, 0, 0, 0 })
       b.label:SetTextColor(unpack(active and Theme.onAccent or Theme.textMuted))
     end
   end
@@ -683,8 +737,7 @@ local function AddSegmentedRow(container, y, width, field)
   for _, option in ipairs(field.values) do
     local b = CreateFrame("Button", nil, seg)
     b:SetHeight(22)
-    b.bg = b:CreateTexture(nil, "ARTWORK")
-    b.bg:SetAllPoints()
+    b.bg = Widgets.RoundedFill(b, b, 4, "ARTWORK")
     b.label = CreateLabel(b, 11.5, Theme.textMuted, true)
     b.label:SetPoint("CENTER")
     b.label:SetText(option.label)
@@ -697,8 +750,8 @@ local function AddSegmentedRow(container, y, width, field)
       Paint(option.key)
       field.set(option.key)
     end)
-    b:SetScript("OnEnter", function(self) if not self.active then self.bg:SetColorTexture(1, 1, 1, 0.06) end end)
-    b:SetScript("OnLeave", function(self) if not self.active then self.bg:SetColorTexture(0, 0, 0, 0) end end)
+    b:SetScript("OnEnter", function(self) if not self.active then self.bg:SetColor(1, 1, 1, 0.06) end end)
+    b:SetScript("OnLeave", function(self) if not self.active then self.bg:SetColor(0, 0, 0, 0) end end)
     table.insert(buttons, b)
   end
   seg:SetWidth(x)
@@ -729,9 +782,8 @@ local function AddStepperRow(container, y, width, field)
     local b = CreateFrame("Button", nil, box)
     b:SetSize(32, 24)
     b:SetPoint(def[3], box, def[3], def[3] == "LEFT" and 1 or -1, 0)
-    local bg = b:CreateTexture(nil, "ARTWORK")
-    bg:SetAllPoints()
-    bg:SetColorTexture(0, 0, 0, 0)
+    local bg = Widgets.RoundedFill(b, b, 5, "ARTWORK")
+    bg:SetColor(0, 0, 0, 0)
     local glyph = CreateLabel(b, 15, Theme.textPrimary, true)
     glyph:SetPoint("CENTER")
     glyph:SetText(def[1])
@@ -741,8 +793,8 @@ local function AddStepperRow(container, y, width, field)
     divider:SetPoint("BOTTOM", b, def[3] == "LEFT" and "BOTTOMRIGHT" or "BOTTOMLEFT", 0, 0)
     divider:SetColorTexture(unpack(Theme.border))
     local a = Theme.accent
-    b:SetScript("OnEnter", function() bg:SetColorTexture(a[1], a[2], a[3], 0.2) end)
-    b:SetScript("OnLeave", function() bg:SetColorTexture(0, 0, 0, 0) end)
+    b:SetScript("OnEnter", function() bg:SetColor(a[1], a[2], a[3], 0.2) end)
+    b:SetScript("OnLeave", function() bg:SetColor(0, 0, 0, 0) end)
     b:SetScript("OnClick", function() Step(def[2]) end)
   end
   Paint()
@@ -922,27 +974,60 @@ RenderField = function(container, field, y, width)
 end
 
 ClearContent = function()
-  for _, region in ipairs({ contentInner:GetRegions() }) do
-    region:Hide()
-    region:SetParent(nil)
-  end
-  for _, child in ipairs({ contentInner:GetChildren() }) do
-    child:Hide()
-    child:SetParent(nil)
-  end
+  for _, page in pairs(built.pages) do page.frame:Hide() end
 end
 
 ClearPreview = function()
-  for _, inner in ipairs({ previewBottomInner, previewSideInner }) do
-    for _, region in ipairs({ inner:GetRegions() }) do
-      region:Hide()
-      region:SetParent(nil)
+  for _, entry in pairs(built.previews) do entry.holder:Hide() end
+end
+
+local function Discard(f)
+  f:Hide()
+  f:SetParent(nil)
+end
+
+local function SigValue(v, depth)
+  local t = type(v)
+  if t == "function" then return "fn" end
+  if t ~= "table" then return tostring(v) end
+  depth = depth or 0
+  if depth >= 3 then return "{}" end
+  local keys = {}
+  for k in pairs(v) do keys[#keys + 1] = k end
+  table.sort(keys, function(x, y) return tostring(x) < tostring(y) end)
+  local out = {}
+  for _, k in ipairs(keys) do out[#out + 1] = tostring(k) .. "=" .. SigValue(v[k], depth + 1) end
+  return "{" .. table.concat(out, ",") .. "}"
+end
+
+local SIG_READERS = { get = true, label = true, desc = true, values = true, disabled = true }
+
+local function FieldsSignature(fields, width)
+  local a = Theme.accent
+  local parts = { math.floor(width + 0.5), a[1], a[2], a[3], tostring(Theme.font) }
+  for _, field in ipairs(fields) do
+    if type(field) ~= "table" then
+      parts[#parts + 1] = tostring(field)
+    else
+      if field.type == "profile-list" or field.type == "profile-share" then return nil end
+      local keys = {}
+      for k in pairs(field) do keys[#keys + 1] = k end
+      table.sort(keys, function(x, y) return tostring(x) < tostring(y) end)
+      for _, k in ipairs(keys) do
+        local v = field[k]
+        if type(v) == "function" then
+          if SIG_READERS[k] then
+            local ok, res = pcall(v)
+            parts[#parts + 1] = tostring(k) .. ":" .. (ok and SigValue(res) or "!")
+          end
+        else
+          parts[#parts + 1] = tostring(k) .. "=" .. SigValue(v)
+        end
+      end
     end
-    for _, child in ipairs({ inner:GetChildren() }) do
-      child:Hide()
-      child:SetParent(nil)
-    end
+    parts[#parts + 1] = ";"
   end
+  return table.concat(parts, "|")
 end
 
 local function ApplyPreviewPlacement(category)
@@ -980,7 +1065,7 @@ UpdateScrollBounds = function()
   contentInner:SetPoint("RIGHT", contentClip, "RIGHT", 0, 0)
 end
 
-RenderFields = function(fields)
+RenderFields = function(fields, key, force)
   ClearContent()
   for _, field in ipairs(fields) do
     if field.set then
@@ -993,6 +1078,33 @@ RenderFields = function(fields)
   end
   local width = contentInner:GetWidth()
   if not width or width < 100 then width = 300 end
+  built.width = width
+
+  local sig = key and FieldsSignature(fields, width) or nil
+  local cached = key and built.pages[key]
+  if cached and sig and cached.sig == sig and not force then
+    cached.frame:Show()
+    contentInner:SetHeight(cached.height)
+    UpdateScrollBounds()
+    return
+  end
+  if cached then
+    Discard(cached.frame)
+    built.pages[key] = nil
+  end
+  local page = CreateFrame("Frame", nil, contentInner)
+  page:SetPoint("TOPLEFT", contentInner, "TOPLEFT", 0, 0)
+  page:SetSize(width, 1)
+  local entry = { frame = page, width = width }
+  for _, field in ipairs(fields) do
+    if type(field) == "table" and field.set then
+      local inner = field.set
+      field.set = function(...)
+        inner(...)
+        if entry.sig and built.pages[key] == entry then entry.sig = FieldsSignature(fields, entry.width) end
+      end
+    end
+  end
 
   local groups, current = {}, nil
   for _, field in ipairs(fields) do
@@ -1010,21 +1122,10 @@ RenderFields = function(fields)
 
   local y = 0
   for _, group in ipairs(groups) do
-    local box = CreateFrame("Frame", nil, contentInner)
+    local box = CreateFrame("Frame", nil, page)
     box:SetPoint("TOPLEFT", 0, -y)
     box:SetWidth(width)
-    local boxBg = box:CreateTexture(nil, "BACKGROUND")
-    boxBg:SetAllPoints()
-    boxBg:SetColorTexture(1, 1, 1, 0.025)
-    for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
-      local line = box:CreateTexture(nil, "BORDER")
-      line:SetColorTexture(unpack(Theme.border))
-      if side == "TOP" or side == "BOTTOM" then
-        line:SetPoint(side .. "LEFT"); line:SetPoint(side .. "RIGHT"); line:SetHeight(1)
-      else
-        line:SetPoint("TOP" .. side); line:SetPoint("BOTTOM" .. side); line:SetWidth(1)
-      end
-    end
+    Widgets.Backdrop(box, { 1, 1, 1, 0.025 }, Theme.border, 9)
 
     local titleH = 0
     if group.title then
@@ -1049,7 +1150,12 @@ RenderFields = function(fields)
     y = y + boxH + BOX_GAP
   end
 
-  contentInner:SetHeight(math.max(y - BOX_GAP, 1))
+  local height = math.max(y - BOX_GAP, 1)
+  page:SetHeight(height)
+  contentInner:SetHeight(height)
+  entry.height = height
+  entry.sig = sig
+  if key then built.pages[key] = entry end
   UpdateScrollBounds()
 end
 
@@ -1129,7 +1235,7 @@ end
 RerenderActiveFields = function()
   for _, c in ipairs(CATEGORIES) do
     if c.key == activeCategory then
-      RenderFields(c.build())
+      RenderFields(c.build(), c.key, true)
       return
     end
   end
@@ -1137,17 +1243,17 @@ end
 
 SelectCategory = function(key)
   activeCategory = key
-  if GG.RosterUI and GG.RosterUI.FitSettingsWidth and GG.RosterUI:FitSettingsWidth() then
-    C_Timer.After(0, function()
-      if activeCategory == key and panelFrame and panelFrame:IsShown() then SelectCategory(key) end
-    end)
-  end
+  if GG.RosterUI and GG.RosterUI.FitSettingsWidth then GG.RosterUI:FitSettingsWidth() end
+  C_Timer.After(0, function()
+    if activeCategory == key then GG.UI:OnRosterResized() end
+  end)
   for catKey, btn in pairs(sidebarButtons) do
     local active = catKey == key
     btn.accent:SetShown(active)
     btn.bg:SetShown(active)
     local a = Theme.accent
-    btn.bg:SetColorTexture(a[1], a[2], a[3], 0.18)
+    btn.bg:SetColor(a[1], a[2], a[3], 0.18)
+    btn.accent:SetVertexColor(a[1], a[2], a[3], 1)
     btn.label:SetFont(active and Theme.fontBold or Theme.font, 12.5, "")
     btn.label:SetTextColor(unpack(active and { 1, 1, 1, 1 } or Theme.textMuted))
     if btn.tint then
@@ -1165,19 +1271,40 @@ SelectCategory = function(key)
   end
   if category and toolbar then
     toolbar.title:SetText(L[category.labelKey])
+    toolbar.note:SetText(L["SETTINGS_TOOLBAR_NOTE"])
     toolbar.reset:SetShown(category.resettable == true)
     toolbar.reset.categoryKey = key
   end
   if category then
     local side = ApplyPreviewPlacement(category)
-    RenderFields(category.build())
+    RenderFields(category.build(), key)
 
     ClearPreview()
     activePreviewRefresh = nil
     local buildPreview = side and category.buildPreviewVertical or category.buildPreview
     if buildPreview then
-      activePreviewRefresh = buildPreview(previewInner)
+      local a = Theme.accent
+      local pkey = key .. (side and ":side" or ":bottom")
+      local psig = table.concat({ math.floor((previewInner:GetWidth() or 0) + 0.5),
+        math.floor((previewInner:GetHeight() or 0) + 0.5), a[1], a[2], a[3], tostring(Theme.font) }, "|")
+      local entry = built.previews[pkey]
+      if entry and entry.sig ~= psig then
+        Discard(entry.holder)
+        entry = nil
+      end
+      if not entry then
+        local holder = CreateFrame("Frame", nil, previewInner)
+        holder:SetAllPoints(previewInner)
+        entry = { holder = holder, sig = psig }
+        built.previews[pkey] = entry
+        entry.refresh = buildPreview(holder)
+      end
+      entry.holder:Show()
+      activePreviewRefresh = entry.refresh
       if activePreviewRefresh then activePreviewRefresh() end
+    elseif category.summary and toolbar then
+      activePreviewRefresh = function() toolbar.note:SetText(category.summary()) end
+      activePreviewRefresh()
     end
   end
 end
@@ -1342,6 +1469,7 @@ local function BuildThemeFields()
       set = function(v)
         if RT:SetTheme(options, v) then Relayout() end
       end,
+      values = function() return GG.RosterUI and GG.RosterUI.ThemeThumbsKey and GG.RosterUI.ThemeThumbsKey() or "" end,
     },
     { id = "themePartsHeader", type = "header", label = L["THEME_PARTS_HEADER"] },
   }
@@ -1386,12 +1514,14 @@ local function BuildWindowFields()
       values = {
         { key = "horizontal", label = L["OPT_LAYOUT_ROWS"] },
         { key = "vertical", label = L["OPT_LAYOUT_COLUMNS"] },
+        { key = "accounts", label = L["LAYOUT_ACCOUNTS"] },
       },
-      get = function() return options.layoutMode == "vertical" and "vertical" or "horizontal" end,
+      get = function()
+        local mode = options.layoutMode
+        return (mode == "vertical" or mode == "accounts") and mode or "horizontal"
+      end,
       set = function(v)
-        if (options.layoutMode == "vertical") == (v == "vertical") then return end
-        options.layoutMode = v
-        GG.RosterUI:ApplyLayoutMode()
+        GG.RosterUI:SetLayoutMode(v)
       end,
     },
     {
@@ -1439,6 +1569,12 @@ local function BuildWindowFields()
       label = L["OPT_LOCK_WINDOW"],
       get = function() return options.lockWindow == true end,
       set = function(v) options.lockWindow = v end,
+    },
+    {
+      type = "toggle",
+      label = L["OPT_WINDOW_ANIMATIONS"],
+      get = function() return options.windowAnimations ~= false end,
+      set = function(v) options.windowAnimations = v end,
     },
     {
       type = "toggle",
@@ -1504,38 +1640,15 @@ local function BuildWindowFields()
   }
 end
 
-local function BuildWindowPreview(container)
+local function WindowSummary()
   local options = GGDB.options
-
-  local mock = CreateFrame("Frame", nil, container)
-  mock:SetSize(64, 40)
-  mock:SetPoint("LEFT", 4, 6)
-  local mockBg = mock:CreateTexture(nil, "BACKGROUND")
-  mockBg:SetAllPoints()
-  mockBg:SetColorTexture(unpack(Theme.panel))
-  local mockLogo = mock:CreateTexture(nil, "ARTWORK")
-  mockLogo:SetSize(16, 16)
-  mockLogo:SetPoint("CENTER")
-  mockLogo:SetTexture(Theme.media.logoIcon)
-
-  local statusLabel = CreateLabel(container, 11, Theme.textFaint)
-  statusLabel:SetPoint("LEFT", 110, 0)
-  statusLabel:SetWordWrap(true)
-  statusLabel:SetWidth(520)
-
-  return function()
-    mock:SetScale(options.windowScale or 1.0)
-    mock:SetAlpha(options.windowOpacity or 1.0)
-    local r, g, b = GG:ResolveAccentRGB()
-    if r then mockLogo:SetVertexColor(r, g, b, 1) else mockLogo:SetVertexColor(unpack(GG.ACCENT_DEFAULT)) end
-    local minimapStatus = options.minimap.hide and L["OPTIONS_PREVIEW_MINIMAP_HIDDEN"]
-      or (options.minimap.lock and L["OPTIONS_PREVIEW_MINIMAP_LOCKED"] or L["OPTIONS_PREVIEW_MINIMAP_SHOWN"])
-    statusLabel:SetText(L["OPTIONS_PREVIEW_WINDOW_STATUS"]:format(
-      math.floor((options.windowOpacity or 1) * 100 + 0.5),
-      minimapStatus,
-      options.minLevel or 1
-    ))
-  end
+  local minimapStatus = options.minimap.hide and L["OPTIONS_PREVIEW_MINIMAP_HIDDEN"]
+    or (options.minimap.lock and L["OPTIONS_PREVIEW_MINIMAP_LOCKED"] or L["OPTIONS_PREVIEW_MINIMAP_SHOWN"])
+  return L["OPTIONS_PREVIEW_WINDOW_STATUS"]:format(
+    math.floor((options.windowOpacity or 1) * 100 + 0.5),
+    minimapStatus,
+    options.minLevel or 1
+  )
 end
 
 local function BuildAccountFields()
@@ -1679,34 +1792,45 @@ local function BuildAccountFields()
       break
     end
   end
+
+  if not (GG:HasOtherAccounts() or built.accountShowAll) then
+    return {
+      fields[1], fields[2],
+      { type = "header", label = L["SETTINGS_BOX_OTHER_ACCOUNTS"] },
+      {
+        id = "link",
+        type = "info-button",
+        label = function() return L["OPTIONS_LINK_SIMPLE_LABEL"] end,
+        desc = L["OPTIONS_LINK_SIMPLE_DESC"],
+        buttonText = L["OPTIONS_LINK_SIMPLE_BUTTON"],
+        onClick = function() StaticPopup_Show("GG_LINK_ASK_TARGET") end,
+      },
+      {
+        type = "expander",
+        label = L["OPTIONS_ACCOUNT_MORE"],
+        expanded = false,
+        onToggle = function()
+          built.accountShowAll = true
+          RerenderActiveFields()
+        end,
+      },
+    }
+  end
+  for _, field in ipairs(fields) do
+    if type(field) == "table" and field.desc and field.type ~= "header" and field ~= fields[2] then
+      field.tip = true
+    end
+  end
   return fields
 end
+GG.SettingsBuildAccountFields = BuildAccountFields
 
-local function BuildAccountPreview(container)
+local function AccountSummary()
   local options = GGDB.options
-
-  local pill = CreateFrame("Frame", nil, container)
-  pill:SetHeight(24)
-  pill:SetPoint("LEFT", 4, 0)
-  local pillBg = pill:CreateTexture(nil, "BACKGROUND")
-  pillBg:SetAllPoints()
-  pillBg:SetColorTexture(Theme.accent[1], Theme.accent[2], Theme.accent[3], 0.22)
-  local pillLabel = CreateLabel(pill, 12, Theme.accent, true)
-  pillLabel:SetPoint("CENTER")
-
-  local mainLabel = CreateLabel(container, 11, Theme.textFaint)
-  mainLabel:SetPoint("LEFT", pill, "RIGHT", 90, 0)
-  mainLabel:SetWordWrap(true)
-  mainLabel:SetWidth(220)
-
-  return function()
-    local text = GG:FormatAccountLabel(GG:GetAccountSlot(), GGDB.account and GGDB.account.battleTag)
-    pillLabel:SetText(text)
-    pill:SetWidth(pillLabel:GetStringWidth() + 24)
-    mainLabel:SetText(options.mainCharacterKey
-      and L["OPTIONS_PREVIEW_MAIN_SET"]:format(options.mainCharacterKey)
-      or L["OPTIONS_PREVIEW_MAIN_NONE"])
-  end
+  local main = options.mainCharacterKey and L["OPTIONS_PREVIEW_MAIN_SET"]:format(options.mainCharacterKey)
+    or L["OPTIONS_PREVIEW_MAIN_NONE"]
+  if not GG:HasOtherAccounts() then return main end
+  return ("%s · %s"):format(GG:FormatAccountLabel(GG:GetAccountSlot(), GGDB.account and GGDB.account.battleTag), main)
 end
 
 local function BuildAnnouncementsFields()
@@ -1784,6 +1908,35 @@ local function BuildPopupsFields()
       get = function() return options.rosterCallSound ~= false end,
       set = function(v) options.rosterCallSound = v end,
     },
+    {
+      id = "rosterCallPill",
+      type = "toggle",
+      label = L["POPUP_ROSTER_CALL_PILL"],
+      desc = L["POPUP_ROSTER_CALL_PILL_DESC"],
+      buttonText = L["POPUP_TEST"],
+      onClick = function() GG.RosterCall:TestPill() end,
+      get = function() return options.rosterCallPill ~= false end,
+      set = function(v) options.rosterCallPill = v end,
+    },
+    {
+      id = "rosterAutoInvite",
+      type = "toggle",
+      label = L["POPUP_ROSTER_AUTO_INVITE"],
+      desc = L["POPUP_ROSTER_AUTO_INVITE_DESC"],
+      get = function() return options.rosterAutoInvite ~= false end,
+      set = function(v)
+        options.rosterAutoInvite = v
+        if GG.RaidGroups then GG.RaidGroups:OnInviteOptionChanged() end
+      end,
+    },
+    {
+      id = "rosterAutoAccept",
+      type = "toggle",
+      label = L["POPUP_ROSTER_AUTO_ACCEPT"],
+      desc = L["POPUP_ROSTER_AUTO_ACCEPT_DESC"],
+      get = function() return options.rosterAutoAccept ~= false end,
+      set = function(v) options.rosterAutoAccept = v end,
+    },
     popup("popupRosterCharacter", "POPUP_ROSTER_CHARACTER", function() GG.RosterAlert:Test() end, "POPUP_ROSTER_CHARACTER_NOTE"),
     popup("popupLockoutGroup", "POPUP_LOCKOUT_GROUP", function() GG.LockoutAlert:RenderGroupAlert() end),
     popup("popupLockoutInstance", "POPUP_LOCKOUT_INSTANCE", function() GG.LockoutAlert:TestInstanceAlert() end),
@@ -1818,10 +1971,11 @@ local function BuildAnnouncementsPreview(container)
     local template = (key == "guild" and CHAT_GUILD_GET or CHAT_PARTY_GET) or "[%s]: "
     return (template:gsub("|H.-|h(.-)|h", "%1")):format(playerName)
   end
-  local chatBg = container:CreateTexture(nil, "BACKGROUND")
+  local chatBg = Widgets.NewRoundTexture(container, "BACKGROUND")
   chatBg:SetPoint("TOPLEFT", -8, 6)
   chatBg:SetWidth(516)
-  chatBg:SetColorTexture(0, 0, 0, 0.35)
+  Widgets.ApplyRound(chatBg, "RoundFill", 6)
+  chatBg:SetVertexColor(0, 0, 0, 0.35)
 
   local captions, lines = {}, {}
   local y = 0
@@ -1872,9 +2026,9 @@ CATEGORIES = {
   { key = "bosses", labelKey = "SETTINGS_CAT_BOSSES", build = BuildBossesFields, buildPreview = BuildBossesPreview,
     buildPreviewVertical = BuildBossesPreviewVertical, resettable = true,
     icon = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8" },
-  { key = "window", labelKey = "SETTINGS_CAT_WINDOW", build = BuildWindowFields, buildPreview = BuildWindowPreview,
+  { key = "window", labelKey = "SETTINGS_CAT_WINDOW", build = BuildWindowFields, summary = WindowSummary,
     resettable = true, icon = Theme.media.logoIcon, tint = true },
-  { key = "account", labelKey = "SETTINGS_CAT_ACCOUNT", build = BuildAccountFields, buildPreview = BuildAccountPreview,
+  { key = "account", labelKey = "SETTINGS_CAT_ACCOUNT", build = BuildAccountFields, summary = AccountSummary,
     icon = "Interface\\AddOns\\GG\\Media\\Characters64.tga", tint = true },
   { key = "announcements", labelKey = "SETTINGS_CAT_ANNOUNCEMENTS", build = BuildAnnouncementsFields, buildPreview = BuildAnnouncementsPreview,
     resettable = true, icon = "Interface\\GossipFrame\\GossipGossipIcon" },
@@ -1889,37 +2043,32 @@ BuildSidebar = function()
   sidebar:SetPoint("TOPLEFT", panelFrame, "TOPLEFT", 0, 0)
   sidebar:SetPoint("BOTTOMLEFT", panelFrame, "BOTTOMLEFT", 0, 0)
   sidebar:SetWidth(SIDEBAR_WIDTH)
-  local sidebarBg = sidebar:CreateTexture(nil, "BACKGROUND")
-  sidebarBg:SetAllPoints()
-  sidebarBg:SetColorTexture(unpack(NAV_BG))
+  local sidebarCard = CreateFrame("Frame", nil, sidebar)
+  sidebarCard:SetPoint("TOPLEFT", 8, -8)
+  sidebarCard:SetPoint("BOTTOMRIGHT", -2, 8)
+  Widgets.Backdrop(sidebarCard, NAV_BG, nil, 9)
 
-  local divider = sidebar:CreateTexture(nil, "ARTWORK")
-  divider:SetPoint("TOPRIGHT", 0, 0)
-  divider:SetPoint("BOTTOMRIGHT", 0, 0)
-  divider:SetWidth(1)
-  divider:SetColorTexture(unpack(Theme.borderSoft))
-
-  local y = 10
+  local y = 14
   for _, category in ipairs(CATEGORIES) do
     local btn = CreateFrame("Button", nil, sidebar)
     btn:SetHeight(32)
-    btn:SetPoint("TOPLEFT", 0, -y)
-    btn:SetPoint("RIGHT", 0, 0)
+    btn:SetPoint("TOPLEFT", 12, -y)
+    btn:SetPoint("RIGHT", -6, 0)
 
-    btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-    btn.bg:SetAllPoints()
+    btn.bg = Widgets.RoundedFill(btn, btn, 6, "BACKGROUND")
     btn.bg:Hide()
 
-    btn.accent = btn:CreateTexture(nil, "ARTWORK")
-    btn.accent:SetPoint("TOPLEFT")
-    btn.accent:SetPoint("BOTTOMLEFT")
+    btn.accent = Widgets.NewRoundTexture(btn, "ARTWORK")
+    Widgets.ApplyRound(btn.accent, "RoundFill", 2)
+    btn.accent:SetPoint("TOPLEFT", 3, -8)
+    btn.accent:SetPoint("BOTTOMLEFT", 3, 8)
     btn.accent:SetWidth(3)
-    btn.accent:SetColorTexture(unpack(Theme.accent))
+    btn.accent:SetVertexColor(unpack(Theme.accent))
     btn.accent:Hide()
 
     btn.icon = btn:CreateTexture(nil, "ARTWORK")
     btn.icon:SetSize(15, 15)
-    btn.icon:SetPoint("LEFT", 14, 0)
+    btn.icon:SetPoint("LEFT", 12, 0)
     if category.icon then btn.icon:SetTexture(category.icon) end
     btn.tint = category.tint
 
@@ -1931,7 +2080,7 @@ BuildSidebar = function()
     btn:SetScript("OnClick", function() SelectCategory(key) end)
     btn:SetScript("OnEnter", function()
       if activeCategory ~= key then
-        btn.bg:SetColorTexture(1, 1, 1, 0.04)
+        btn.bg:SetColor(1, 1, 1, 0.04)
         btn.bg:Show()
       end
     end)
@@ -1951,17 +2100,10 @@ BuildPanel = function(parent, anchorBelow)
 
   previewFrame = CreateFrame("Frame", nil, panelFrame)
   previewBottomFrame = previewFrame
-  previewFrame:SetPoint("BOTTOMLEFT", panelFrame, "BOTTOMLEFT", SIDEBAR_WIDTH, 0)
-  previewFrame:SetPoint("BOTTOMRIGHT", panelFrame, "BOTTOMRIGHT", 0, 0)
-  previewFrame:SetHeight(PREVIEW_HEIGHT)
-  local previewBg = previewFrame:CreateTexture(nil, "BACKGROUND")
-  previewBg:SetAllPoints()
-  previewBg:SetColorTexture(unpack(Theme.panel))
-  local previewDivider = previewFrame:CreateTexture(nil, "ARTWORK")
-  previewDivider:SetPoint("TOPLEFT", 0, 0)
-  previewDivider:SetPoint("TOPRIGHT", 0, 0)
-  previewDivider:SetHeight(1)
-  previewDivider:SetColorTexture(unpack(Theme.borderSoft))
+  previewFrame:SetPoint("BOTTOMLEFT", panelFrame, "BOTTOMLEFT", SIDEBAR_WIDTH + 6, 8)
+  previewFrame:SetPoint("BOTTOMRIGHT", panelFrame, "BOTTOMRIGHT", -8, 8)
+  previewFrame:SetHeight(PREVIEW_HEIGHT - 8)
+  Widgets.Backdrop(previewFrame, Theme.panel, Theme.borderSoft, 9)
   local previewLabel = CreateLabel(previewFrame, 10, Theme.textFaint, true)
   previewLabel:SetPoint("TOPLEFT", CONTENT_PADDING, -8)
   previewLabel:SetText(L["SETTINGS_PREVIEW_LABEL"])
@@ -1971,17 +2113,10 @@ BuildPanel = function(parent, anchorBelow)
   previewBottomInner = previewInner
 
   previewSideFrame = CreateFrame("Frame", nil, panelFrame)
-  previewSideFrame:SetPoint("TOPRIGHT", panelFrame, "TOPRIGHT", 0, 0)
-  previewSideFrame:SetPoint("BOTTOMRIGHT", panelFrame, "BOTTOMRIGHT", 0, 0)
-  previewSideFrame:SetWidth(SIDE_PREVIEW_WIDTH)
-  local sideBg = previewSideFrame:CreateTexture(nil, "BACKGROUND")
-  sideBg:SetAllPoints()
-  sideBg:SetColorTexture(unpack(Theme.panel))
-  local sideDivider = previewSideFrame:CreateTexture(nil, "ARTWORK")
-  sideDivider:SetPoint("TOPLEFT", 0, 0)
-  sideDivider:SetPoint("BOTTOMLEFT", 0, 0)
-  sideDivider:SetWidth(1)
-  sideDivider:SetColorTexture(unpack(Theme.borderSoft))
+  previewSideFrame:SetPoint("TOPRIGHT", panelFrame, "TOPRIGHT", -8, -8)
+  previewSideFrame:SetPoint("BOTTOMRIGHT", panelFrame, "BOTTOMRIGHT", -8, 8)
+  previewSideFrame:SetWidth(SIDE_PREVIEW_WIDTH - 8)
+  Widgets.Backdrop(previewSideFrame, Theme.panel, Theme.borderSoft, 9)
   local sideLabel = CreateLabel(previewSideFrame, 10, Theme.textFaint, true)
   sideLabel:SetPoint("TOPLEFT", CONTENT_PADDING, -8)
   sideLabel:SetText(L["SETTINGS_PREVIEW_LABEL"])
@@ -2070,6 +2205,14 @@ StaticPopupDialogs["GG_RESET_SETTINGS_SECTION"] = {
   preferredIndex = 3,
 }
 
+function GG.UI:OnRosterResized()
+  if not (panelFrame and panelFrame:IsShown() and activeCategory) then return end
+  local width = contentInner:GetWidth()
+  if not width or width < 100 then return end
+  if built.width and math.abs(width - built.width) <= 0.5 then return end
+  SelectCategory(activeCategory)
+end
+
 function GG.UI:OnRosterLayoutChanged()
   if panelFrame and panelFrame:IsShown() and activeCategory then
     SelectCategory(activeCategory)
@@ -2114,6 +2257,10 @@ function GG.UI:ShowSettingsPanel(parent, anchorBelow)
   if not panelFrame then BuildPanel(parent, anchorBelow) end
   panelFrame:Show()
   SelectCategory(activeCategory or CATEGORIES[1].key)
+end
+
+function GG.UI:ShowSettingsCategory(key)
+  if panelFrame and panelFrame:IsShown() then SelectCategory(key) end
 end
 
 function GG.UI:HideSettingsPanel()
